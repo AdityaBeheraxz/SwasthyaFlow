@@ -1,0 +1,13 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: swasthyaflow
+      POSTGRES_USER: swasthyaflow
+      POSTGRES_PASSWORD: local-only
+    ports:
+      - "5432:5432"
+    volumes:
+      - swasthya_db:/var/lib/postgresql/data
+volumes:
+  swasthya_db:

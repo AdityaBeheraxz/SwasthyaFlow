@@ -1,0 +1,8 @@
+[
+  {"rule_id":"R001","signal":"reported_fainting","priority":"RED","message":"Reported fainting requires urgent professional review.","match":{"symptom":"fainting"}},
+  {"rule_id":"R002","signal":"chest_discomfort_with_breathlessness","priority":"RED","message":"The combination of reported chest discomfort and breathlessness requires urgent professional review.","match":{"allSymptoms":["chest discomfort","breathlessness"]}},
+  {"rule_id":"R003","signal":"difficulty_breathing","priority":"RED","message":"Reported difficulty breathing requires urgent professional review.","match":{"symptom":"difficulty breathing"}},
+  {"rule_id":"R004","signal":"persistent_fever","priority":"YELLOW","message":"Fever lasting more than three days may require prompt clinical review.","match":{"symptom":"fever","durationDaysGt":3}},
+  {"rule_id":"R005","signal":"severe_pain","priority":"YELLOW","message":"Reported severe pain may require prompt clinical review.","match":{"symptom":"severe pain"}},
+  {"rule_id":"R006","signal":"low_hb_value","priority":"YELLOW","message":"This report value may require clinical review.","match":{"hbBelow":10}}
+]
