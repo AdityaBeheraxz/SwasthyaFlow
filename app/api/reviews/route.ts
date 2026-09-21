@@ -5,6 +5,7 @@ import { encounters, triageNotes, reviews, auditLogs } from '@/db/schema';
 import { session, allowed } from '@/lib/auth';
 import { failure, success, parseFailure } from '@/lib/api';
 import { assertNonDiagnostic } from '@/lib/safety/resolve';
+import {encounterForActor} from '@/lib/access';
 import { transition, type EncounterState } from '@/lib/state';
 
 const schema=z.object({
@@ -22,7 +23,7 @@ export async function POST(req:Request){
   if(body.decision==='APPROVE'&&actor?.role!=='medical_officer')return failure('FORBIDDEN','Medical Officer role required to approve.',403);
   if(body.summary)assertNonDiagnostic(body.summary);
   const conn=await db();
-  const [encounter]=await conn.select().from(encounters).where(eq(encounters.id,body.encounterId)).limit(1);
+  const encounter=await encounterForActor(body.encounterId,actor!);
   if(!encounter)return failure('NOT_FOUND','Encounter not found.',404);
   const [note]=await conn.select().from(triageNotes).where(eq(triageNotes.encounterId,body.encounterId)).limit(1);
   if(!note&&body.decision!=='REQUEST_INFO')return failure('TRIAGE_FAILED','No usable triage note. Request information or retry.',422);

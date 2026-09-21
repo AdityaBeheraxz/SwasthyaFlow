@@ -6,12 +6,13 @@ import { failure, success, parseFailure } from '@/lib/api';
 import { authorizeOverride,makeOverrideAudit } from '@/lib/safety/override';
 import { type Priority } from '@/lib/safety/resolve';
 import { z } from 'zod';
+import {encounterForActor} from '@/lib/access';
 const bodySchema=z.object({encounterId:z.string().min(1),newPriority:z.enum(['RED','YELLOW','GREEN']),reason:z.string()});
 export async function POST(req:Request){
  const actor=await session(); if(!actor)return failure('UNAUTHORIZED','Select a demo role.',401);
  try{
   const body=bodySchema.parse(await req.json()); const conn=await db();
-  const [current]=await conn.select().from(encounters).where(eq(encounters.id,body.encounterId)).limit(1);
+  const current=await encounterForActor(body.encounterId,actor!);
   if(!current)return failure('NOT_FOUND','Encounter not found.',404);
   if(current.state==='COMPLETED')return failure('ILLEGAL_TRANSITION','Completed encounters cannot be changed.',422);
   if(!['RED','YELLOW','GREEN'].includes(current.priorityFinal??''))return failure('PRIORITY_UNAVAILABLE','Only a valid priority can be overridden.',422);

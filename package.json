@@ -13,8 +13,10 @@
     "seed": "tsx db/seed.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx db/migrate.ts"
+    ,"retention:run": "tsx db/retention.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1136.0",
     "@electric-sql/pglite": "^0.3.14",
     "@hookform/resolvers": "^5.2.2",
     "@react-three/drei": "^10.7.4",
@@ -25,6 +27,7 @@
     "lucide-react": "^0.468.0",
     "motion": "^12.23.0",
     "next": "^15.5.0",
+    "openid-client": "^6.8.8",
     "pg": "^8.16.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

@@ -5,6 +5,9 @@ import {authorizeOverride,makeOverrideAudit} from '../lib/safety/override';
 import {validateRules} from '../lib/safety/rules-config';
 import defaults from '../lib/safety/rules.default.json';
 import {z} from 'zod';
+import {productionConfigIssues} from '../lib/runtime-config';
+import {matchesDeclaredType} from '../lib/file-validation';
+import {rulesChecksum} from '../lib/safety/rules-approval';
 
 describe('hard safety rules',()=>{
  it('LLM_GREEN_plus_RULES_RED_is_RED',()=>expect(resolvePriority({valid:true,priorities:['RED']},'GREEN')).toBe('RED'));
@@ -24,4 +27,16 @@ describe('hard safety rules',()=>{
  it('non_diagnostic_guard_rejects_diagnosis_text',()=>expect(()=>assertNonDiagnostic('Diagnosis: pneumonia')).toThrow('AI_PARSE_FAILED'));
  it('controlled_indic_vocab_fires_red',()=>expect(evaluateRules({symptoms:['मुझे बेहोशी हुई']})).toMatchObject([{priority:'RED'}]));
  it('required_rules_cannot_be_weakened',()=>expect(()=>validateRules(defaults.map(rule=>rule.rule_id==='R001'?{...rule,priority:'GREEN'}:rule))).toThrow('REQUIRED_RULE_WEAKENED'));
+});
+
+describe('production release gates',()=>{
+ it('fails closed when clinical provider approvals are absent',()=>{
+  const issues=productionConfigIssues({DEPLOYMENT_MODE:'production',NODE_ENV:'production'} as NodeJS.ProcessEnv);
+  expect(issues).toContain('EXTRACTION_DPA_APPROVED');
+  expect(issues).toContain('OPENAI_DATA_CONTROLS_APPROVED');
+  expect(issues).toContain('TRANSLATION_DPA_APPROVED');
+  expect(issues).toContain('CLINICAL_RULESET_APPROVER');
+ });
+ it('rejects a disguised report upload',()=>expect(matchesDeclaredType(new Uint8Array([0x4d,0x5a,0x90]),'application/pdf')).toBe(false));
+ it('produces a stable clinical rules checksum',()=>expect(rulesChecksum(validateRules(defaults))).toMatch(/^[a-f0-9]{64}$/));
 });

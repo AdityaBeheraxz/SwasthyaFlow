@@ -2,6 +2,10 @@
 
 This is an educational prototype using synthetic data. Verification below reflects the local mock run on 2026-09-20, not clinical validation.
 
+## Production hardening update — 2026-09-21
+
+The application now has a fail-closed production candidate profile with PostgreSQL-only persistence, OIDC, facility isolation, KMS-backed object storage, file signature checks, shared rate limits, approved enterprise extraction, provider data-control gates, two-person clinical rules approval, ruleset checksums, readiness checks, and automated retention. The local build, 20 unit/safety checks, and all five browser journeys pass. Formal clinical validation, regulatory assessment or clearance, provider contracts, hospital privacy approval, penetration testing, infrastructure operations, and accountable release signoff remain external requirements; see [Clinical release gate](CLINICAL_RELEASE.md).
+
 | Requested check | Result | Evidence or remaining gap |
 |---|---|---|
 | Full mock journey | Partial | Playwright covers consent, English text, synthetic CBC, triage, reviewer edit, approval, referral, completion, and audit. A Hindi/Odia voice journey was not run end to end. |

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { eq } from 'drizzle-orm';
+import { and,eq } from 'drizzle-orm';
 import { db } from '@/lib/db/server';
 import { encounters,patients,triageNotes,auditLogs,inputs,reports,rulesConfig } from '@/db/schema';
 import {desc} from 'drizzle-orm';
@@ -10,11 +10,16 @@ import {translationAdapter} from '@/lib/translation';
 import { transition,type EncounterState } from '@/lib/state';
 import type {PriorityResult} from '@/lib/safety/resolve';
 import {validateRules} from '@/lib/safety/rules-config';
+import {encounterForActor} from '@/lib/access';
+import {consumeRateLimit} from '@/lib/rate-limit';
+import {isProductionDeployment} from '@/lib/runtime-config';
+import {rulesChecksum} from '@/lib/safety/rules-approval';
 const schema=z.object({encounterId:z.string().min(1),simulateFailure:z.enum(['ASR_FAILED','OCR_FAILED','AI_FAILED','AI_PARSE_FAILED','TRIAGE_FAILED','SAFETY_ENGINE_FAILED','SAVE_FAILED']).optional()}).strict();
 export async function POST(req:Request){
  const actor=await session();if(!allowed(actor?.role??null,['health_worker','nurse','medical_officer']))return failure('FORBIDDEN','Intake role required.',403);
+ const rate=await consumeRateLimit(`${actor!.id}:triage`,20,60);if(!rate.ok)return failure('RATE_LIMITED','Too many processing requests. Retry shortly.',429);
  let encounterId:string|undefined;
- try{const body=schema.parse(await req.json());const conn=await db();const [encounter]=await conn.select().from(encounters).where(eq(encounters.id,body.encounterId)).limit(1);if(!encounter)return failure('NOT_FOUND','Encounter not found.',404);
+ try{const body=schema.parse(await req.json());const conn=await db();const encounter=await encounterForActor(body.encounterId,actor!);if(!encounter)return failure('NOT_FOUND','Encounter not found.',404);
  if(body.simulateFailure&&process.env.NODE_ENV==='production')return failure('FORBIDDEN','Failure simulation is available only in development.',403);
  encounterId=body.encounterId;
  const [patient]=await conn.select().from(patients).where(eq(patients.id,encounter.patientId)).limit(1);
@@ -31,9 +36,10 @@ export async function POST(req:Request){
  const bundle={text:source.originalText,language:source.language??'en',normalizedText:normalized.normalized,reportText:report?.rawOcr??undefined};
  const facts=await extract(bundle);
  await conn.update(encounters).set({status:'Applying safety rules'}).where(eq(encounters.id,encounter.id));
- const [config]=await conn.select().from(rulesConfig).where(eq(rulesConfig.active,true)).orderBy(desc(rulesConfig.version)).limit(1);
+ const [config]=await conn.select().from(rulesConfig).where(and(eq(rulesConfig.active,true),eq(rulesConfig.facilityId,actor!.facilityId!))).orderBy(desc(rulesConfig.version)).limit(1);
  if(!config)throw new Error('SAFETY_ENGINE_FAILED');
  let activeRules;try{activeRules=validateRules(config.rules);}catch{throw new Error('SAFETY_ENGINE_FAILED');}
+ if(isProductionDeployment&&(config.status!=='APPROVED'||!config.approvedBy||!config.approvedAt||config.approvedBy!==process.env.CLINICAL_RULESET_APPROVER||config.checksum!==rulesChecksum(activeRules)))throw new Error('SAFETY_ENGINE_FAILED');
  const note=assemble(facts,bundle,encounter.priorityFinal as PriorityResult|undefined,activeRules);
  await conn.update(encounters).set({status:'Assembling triage note'}).where(eq(encounters.id,encounter.id));
  const [existingNote]=await conn.select().from(triageNotes).where(eq(triageNotes.encounterId,encounter.id)).limit(1);
