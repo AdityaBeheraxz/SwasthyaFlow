@@ -6,7 +6,7 @@ import { session, allowed } from '@/lib/auth';
 import { failure, success, parseFailure } from '@/lib/api';
 const schema=z.object({age:z.number().int().min(0).max(120),language:z.enum(['en','hi','or']),consent:z.literal(true)}).strict();
 export async function POST(req:Request){
- const actor=await session(); if(!allowed(actor?.role??null,['health_worker','nurse','medical_officer']))return failure('FORBIDDEN','Intake role required.',403);
+ const actor=await session(); if(!allowed(actor?.role??null,['health_worker','nurse','medical_officer']))return failure('FORBIDDEN','Health Worker, Nurse, or Medical Officer role required for intake.',403);
  if(!actor?.facilityId)return failure('FACILITY_REQUIRED','Your account is not assigned to a facility.',403);
  try{const body=schema.parse(await req.json());const conn=await db();
  const id=crypto.randomUUID();let anonymousPatientId='';

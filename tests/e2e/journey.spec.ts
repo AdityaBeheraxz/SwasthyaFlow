@@ -1,6 +1,16 @@
 import {test,expect} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
+test('administrator sees the intake role requirement before submitting',async({page})=>{
+ await page.request.post('/api/session',{data:{userId:'U-105'}});
+ await page.goto('/intake');
+ await expect(page.getByText('Administrator access is limited to settings, audit, and data administration.')).toBeVisible();
+ await expect(page.getByRole('checkbox')).toBeDisabled();
+ await page.request.post('/api/session',{data:{userId:'U-101'}});
+ await page.reload();
+ await expect(page.getByRole('checkbox')).toBeEnabled();
+});
+
 test('consent to audit mock journey',async({page})=>{
  await page.request.post('/api/session',{data:{userId:'U-101'}});
  await page.goto('/');
