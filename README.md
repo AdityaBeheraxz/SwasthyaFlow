@@ -18,6 +18,18 @@ pnpm dev
 
 Open http://localhost:3000. Demo mode does not require external provider keys.
 
+### Demo staff credentials
+
+| Role | Username | Password |
+|---|---|---|
+| Health Worker | `health.worker` | `HealthWorker!2026` |
+| Nurse | `nurse.meera` | `Nurse!2026` |
+| Medical Officer | `doctor.ananya` | `Doctor!2026` |
+| Medical Officer | `doctor.vikram` | `Doctor!2026` |
+| Administrator | `administrator` | `Admin!2026` |
+
+These credentials are limited to synthetic local demonstrations. Production disables local credential login and delegates authentication, account lifecycle, and credential policy to the configured hospital OIDC provider.
+
 ## Production configuration
 
 Copy `.env.example` into the deployment secret store and fill every production value. Set `DEPLOYMENT_MODE=production` and `AI_MODE=enterprise`. The readiness endpoint returns 503 while any gate is incomplete.

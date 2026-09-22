@@ -1,8 +1,10 @@
 import { db } from '../lib/db/index';
-import { facilities, users, patients, patientIdCounters, encounters, inputs, reports, triageNotes, rulesConfig } from './schema';
+import { facilities, users, patients, patientIdCounters, encounters, inputs, reports, triageNotes, rulesConfig, rateLimitEvents } from './schema';
+import {like} from 'drizzle-orm';
 import { evaluateRules } from '../lib/safety/rules';
 import { resolvePriority } from '../lib/safety/resolve';
 import rules from '../lib/safety/rules.default.json';
+import {hashPassword} from '../lib/password';
 
 const examples = [
  ['P-1001',28,'or','ମୋତେ ଦୁଇ ଦିନ ଧରି ହାଲୁକା ମୁଣ୍ଡବିନ୍ଧା ହେଉଛି।',['headache'],2],
@@ -21,14 +23,19 @@ const examples = [
 
 async function main(){
  const conn=await db();
+ await conn.delete(rateLimitEvents).where(like(rateLimitEvents.key,'login:%'));
  await conn.insert(facilities).values({id:'F-001',name:'SwasthyaFlow Demo PHC',type:'Primary Health Centre',location:'Synthetic demonstration facility'}).onConflictDoNothing();
  await conn.insert(patientIdCounters).values({id:'global',nextValue:1013}).onConflictDoNothing();
  for(const user of [
-  {id:'U-101',name:'Health Worker',role:'health_worker'},
-  {id:'U-102',name:'Nurse',role:'nurse'},
-  {id:'U-104',name:'Medical Officer',role:'medical_officer'},
-  {id:'U-105',name:'Administrator',role:'administrator'}
- ]) await conn.insert(users).values({...user,facilityId:'F-001'}).onConflictDoNothing();
+  {id:'U-101',name:'Asha Patnaik',username:'health.worker',password:'HealthWorker!2026',role:'health_worker'},
+  {id:'U-102',name:'Nurse Meera Singh',username:'nurse.meera',password:'Nurse!2026',role:'nurse'},
+  {id:'U-104',name:'Dr. Ananya Rao',username:'doctor.ananya',password:'Doctor!2026',role:'medical_officer'},
+  {id:'U-106',name:'Dr. Vikram Das',username:'doctor.vikram',password:'Doctor!2026',role:'medical_officer'},
+  {id:'U-105',name:'System Administrator',username:'administrator',password:'Admin!2026',role:'administrator'}
+ ]){
+  const {password,...record}=user,passwordHash=await hashPassword(password);
+  await conn.insert(users).values({...record,passwordHash,active:true,facilityId:'F-001'}).onConflictDoUpdate({target:users.id,set:{...record,passwordHash,active:true,facilityId:'F-001'}});
+ }
  await conn.insert(rulesConfig).values({id:'DEFAULT-1',facilityId:'F-001',version:1,rules,status:'APPROVED',active:true,createdBy:'U-105',approvedBy:'U-104',approvedAt:new Date()}).onConflictDoNothing();
  for(const [id,age,language,original,symptoms,days] of examples){
   const patientId=`patient-${id}`; const encounterId=`encounter-${id}`;
