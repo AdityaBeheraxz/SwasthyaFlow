@@ -16,6 +16,15 @@ test('all demo staff credentials authenticate with assigned roles',async({reques
  expect((await request.post('/api/session',{data:{userId:'U-105'}})).status()).toBe(405);
 });
 
+test('navbar collapses into an accessible sheet at the commented viewport',async({page})=>{
+ await page.setViewportSize({width:1119,height:872});
+ await page.goto('/');
+ await expect(page.getByRole('button',{name:'Open navigation'})).toBeVisible();
+ await page.getByRole('button',{name:'Open navigation'}).click();
+ await expect(page.getByRole('navigation',{name:'Mobile main navigation'})).toBeVisible();
+ await expect(page.getByRole('link',{name:'Privacy',exact:true}).first()).toBeVisible();
+});
+
 test('administrator sees the intake role requirement before submitting',async({page})=>{
  await login(page.request,'administrator');
  await page.goto('/intake');
