@@ -17,6 +17,6 @@ export async function GET(){
    let checksum='';try{checksum=rulesChecksum(validateRules(ruleset.rules));}catch{return failure('NOT_READY','The active clinical ruleset is invalid.',503);}
    if(checksum!==ruleset.checksum)return failure('NOT_READY','The active clinical ruleset integrity check failed.',503);
   }
-  return success({status:'ready',deploymentMode,aiMode:process.env.AI_MODE||'mock'});
+  return success({status:'ready',deploymentMode,aiMode:process.env.AI_MODE||'local',ocrMode:process.env.OCR_MODE||(isProductionDeployment?'unconfigured':'tesseract')});
  }catch{return failure('DB_UNAVAILABLE','Database unavailable',503);}
 }

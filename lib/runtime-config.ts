@@ -1,12 +1,12 @@
 import {z} from 'zod';
 
-export const deploymentMode=process.env.DEPLOYMENT_MODE==='production'?'production':'demo';
+export const deploymentMode=process.env.DEPLOYMENT_MODE==='production'?'production':'development';
 export const isProductionDeployment=deploymentMode==='production';
 
 const httpsUrl=z.string().url().refine(value=>value.startsWith('https://'),'must use HTTPS');
 
 export function productionConfigIssues(env:NodeJS.ProcessEnv=process.env):string[]{
- if((env.DEPLOYMENT_MODE??'demo')!=='production')return [];
+ if((env.DEPLOYMENT_MODE??'development')!=='production')return [];
  const issues:string[]=[];
  if(!env.DATABASE_URL)issues.push('DATABASE_URL');
  if(env.DATABASE_SSL_MODE!=='verify-full')issues.push('DATABASE_SSL_MODE');
@@ -15,6 +15,10 @@ export function productionConfigIssues(env:NodeJS.ProcessEnv=process.env):string
  if(!env.EXTRACTION_API_URL||!httpsUrl.safeParse(env.EXTRACTION_API_URL).success)issues.push('EXTRACTION_API_URL');
  if(!env.EXTRACTION_API_KEY)issues.push('EXTRACTION_API_KEY');
  if(env.EXTRACTION_DPA_APPROVED!=='true')issues.push('EXTRACTION_DPA_APPROVED');
+ if(env.OCR_MODE!=='enterprise')issues.push('OCR_MODE');
+ if(!env.OCR_API_URL||!httpsUrl.safeParse(env.OCR_API_URL).success)issues.push('OCR_API_URL');
+ if(!env.OCR_API_KEY)issues.push('OCR_API_KEY');
+ if(env.OCR_DPA_APPROVED!=='true')issues.push('OCR_DPA_APPROVED');
  if(!env.SPEECH_TO_TEXT_API_KEY)issues.push('SPEECH_TO_TEXT_API_KEY');
  if(env.OPENAI_DATA_CONTROLS_APPROVED!=='true')issues.push('OPENAI_DATA_CONTROLS_APPROVED');
  if(!env.TRANSLATION_API_URL||!httpsUrl.safeParse(env.TRANSLATION_API_URL).success)issues.push('TRANSLATION_API_URL');

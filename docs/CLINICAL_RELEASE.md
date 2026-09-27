@@ -18,10 +18,11 @@ SwasthyaFlow has a hardened production deployment profile. That profile is inten
 
 ## Production controls in code
 
-- Production refuses PGlite, demo login, local object storage, mock extraction, incomplete TLS, weak secrets, unapproved provider flags, and missing retention configuration.
+- Production refuses PGlite, development authentication, local object storage, local OCR/extraction, incomplete TLS, weak secrets, unapproved provider flags, and missing retention configuration.
 - OIDC Authorization Code with PKCE, state, nonce, signed sessions, role mapping, and facility assignment replaces the role switcher.
 - Patient, encounter, queue, source file, audit, and ruleset access are facility scoped.
-- Uploads enforce size, declared type, file signatures, authenticated access, and private no-store responses.
+- Uploads enforce size, declared type, file signatures, decoded image or PDF structure, dimensions, page count, authenticated access, and private no-store responses.
+- OCR preserves the source file and raw extraction. Report values cannot enter safety rules until authorized staff confirm reviewed text against the source.
 - Object storage uses KMS encryption. Failed database writes remove newly uploaded objects.
 - Shared PostgreSQL rate limits, external-call timeouts, and visible failures prevent silent degradation.
 - AI extracts source facts only. Deterministic rules choose priority.

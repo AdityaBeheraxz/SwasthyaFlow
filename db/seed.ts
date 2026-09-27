@@ -1,31 +1,16 @@
-import { db } from '../lib/db/index';
-import { facilities, users, patients, patientIdCounters, encounters, inputs, reports, triageNotes, rulesConfig, rateLimitEvents } from './schema';
+import {db} from '../lib/db/index';
+import {facilities,users,patientIdCounters,rulesConfig,rateLimitEvents} from './schema';
 import {like} from 'drizzle-orm';
-import { evaluateRules } from '../lib/safety/rules';
-import { resolvePriority } from '../lib/safety/resolve';
 import rules from '../lib/safety/rules.default.json';
 import {hashPassword} from '../lib/password';
-
-const examples = [
- ['P-1001',28,'or','ମୋତେ ଦୁଇ ଦିନ ଧରି ହାଲୁକା ମୁଣ୍ଡବିନ୍ଧା ହେଉଛି।',['headache'],2],
- ['P-1002',46,'hi','मुझे चार दिन से बुखार है।',['fever'],4],
- ['P-1003',62,'or','ମୋତେ ନିଶ୍ୱାସ ନେବାରେ କଷ୍ଟ ହେଉଛି।',['difficulty breathing'],1],
- ['P-1004',34,'en','I have had a mild cough for two days.',['cough'],2],
- ['P-1005',51,'hi','मुझे तेज दर्द है।',['severe pain'],1],
- ['P-1006',39,'en','I fainted this morning.',['fainting'],1],
- ['P-1007',57,'hi','सीने में दर्द है और सांस फूल रही है।',['chest discomfort','breathlessness'],1],
- ['P-1008',25,'or','ମୋତେ ଜ୍ୱର ହେଉଛି।',['fever'],2],
- ['P-1009',44,'en','I have had a mild headache.',['headache'],1],
- ['P-1010',36,'hi','तीन दिन से खांसी है।',['cough'],3],
- ['P-1011',68,'en','I have severe pain today.',['severe pain'],1],
- ['P-1012',31,'or','ମୋର କାଶ ହେଉଛି।',['cough'],2]
-] as const;
+import {rulesChecksum} from '../lib/safety/rules-approval';
+import {validateRules} from '../lib/safety/rules-config';
 
 async function main(){
  const conn=await db();
  await conn.delete(rateLimitEvents).where(like(rateLimitEvents.key,'login:%'));
- await conn.insert(facilities).values({id:'F-001',name:'SwasthyaFlow Demo PHC',type:'Primary Health Centre',location:'Synthetic demonstration facility'}).onConflictDoNothing();
- await conn.insert(patientIdCounters).values({id:'global',nextValue:1013}).onConflictDoNothing();
+ await conn.insert(facilities).values({id:'F-001',name:'SwasthyaFlow Primary Health Centre',type:'Primary Health Centre',location:'Configured deployment facility'}).onConflictDoUpdate({target:facilities.id,set:{name:'SwasthyaFlow Primary Health Centre',type:'Primary Health Centre',location:'Configured deployment facility'}});
+ await conn.insert(patientIdCounters).values({id:'global',nextValue:1001}).onConflictDoNothing();
  for(const user of [
   {id:'U-101',name:'Asha Patnaik',username:'health.worker',password:'HealthWorker!2026',role:'health_worker'},
   {id:'U-102',name:'Nurse Meera Singh',username:'nurse.meera',password:'Nurse!2026',role:'nurse'},
@@ -36,18 +21,8 @@ async function main(){
   const {password,...record}=user,passwordHash=await hashPassword(password);
   await conn.insert(users).values({...record,passwordHash,active:true,facilityId:'F-001'}).onConflictDoUpdate({target:users.id,set:{...record,passwordHash,active:true,facilityId:'F-001'}});
  }
- await conn.insert(rulesConfig).values({id:'DEFAULT-1',facilityId:'F-001',version:1,rules,status:'APPROVED',active:true,createdBy:'U-105',approvedBy:'U-104',approvedAt:new Date()}).onConflictDoNothing();
- for(const [id,age,language,original,symptoms,days] of examples){
-  const patientId=`patient-${id}`; const encounterId=`encounter-${id}`;
-  const hb=id==='P-1002'?9.2:undefined;
-  const fired=evaluateRules({symptoms:[...symptoms],durationDays:days,hb});
-  const priority=resolvePriority({valid:true,priorities:fired.length?fired.map(rule=>rule.priority):['GREEN']});
-  await conn.insert(patients).values({id:patientId,anonymousPatientId:id,age,preferredLanguage:language,consentStatus:true,facilityId:'F-001'}).onConflictDoNothing();
-  await conn.insert(encounters).values({id:encounterId,patientId,chiefComplaint:original,symptoms:[...symptoms],timeline:[`Day ${days}: patient-reported symptoms`],priority,priorityFinal:priority,prioritySource:'RULES',status:'TRIAGED',state:'TRIAGED',facilityId:'F-001',createdAt:new Date(Date.now()-(Number(id.slice(2))-1000)*7*60000)}).onConflictDoNothing();
-  await conn.insert(inputs).values({id:`input-${id}`,encounterId,type:language==='en'?'text':'voice',originalText:original,transcript:original,language,source:{kind:'synthetic_transcript'}}).onConflictDoNothing();
-  if(id==='P-1002'||id==='P-1003'||id==='P-1004') await conn.insert(reports).values({id:`report-${id}`,encounterId,fileUrl:null,rawOcr:id==='P-1002'?'Haemoglobin 9.2 g/dL':'Synthetic report attached',extractedData:hb?{hb:9.2}:{},qualityStatus:'GOOD',ocrTokens:hb?[{text:'9.2 g/dL',confidence:0.93,bbox:[80,110,155,130]}]:[]}).onConflictDoNothing();
-  await conn.insert(triageNotes).values({id:`triage-${id}`,encounterId,summary:`Patient reports ${symptoms.join(' and ')} for ${days} day${days===1?'':'s'}.`,missingInformation:['Relevant history not provided'],followUpQuestions:['When did the concern first begin?','Has it changed since it began?'],riskSignals:fired,priority,fieldSources:{summary:`input-${id}`,riskSignals:fired.map(rule=>rule.ruleId)}}).onConflictDoNothing();
- }
- console.log('Seeded 12 synthetic encounters');
+ const validated=validateRules(rules);
+ await conn.insert(rulesConfig).values({id:'DEFAULT-1',facilityId:'F-001',version:1,rules,status:'APPROVED',active:true,checksum:rulesChecksum(validated),createdBy:'U-105',approvedBy:'U-104',approvedAt:new Date()}).onConflictDoUpdate({target:rulesConfig.id,set:{rules,status:'APPROVED',active:true,checksum:rulesChecksum(validated),approvedBy:'U-104',approvedAt:new Date()}});
+ console.log('Provisioned facility, staff accounts, and the approved baseline ruleset. No patient or encounter records were created.');
 }
 main().catch((error:unknown)=>{console.error(error);process.exitCode=1;});

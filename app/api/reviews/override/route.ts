@@ -9,7 +9,7 @@ import { z } from 'zod';
 import {encounterForActor} from '@/lib/access';
 const bodySchema=z.object({encounterId:z.string().min(1),newPriority:z.enum(['RED','YELLOW','GREEN']),reason:z.string()});
 export async function POST(req:Request){
- const actor=await session(); if(!actor)return failure('UNAUTHORIZED','Select a demo role.',401);
+ const actor=await session(); if(!actor)return failure('UNAUTHORIZED','Sign in with an authorized staff account.',401);
  try{
   const body=bodySchema.parse(await req.json()); const conn=await db();
   const current=await encounterForActor(body.encounterId,actor!);

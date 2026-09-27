@@ -8,6 +8,7 @@ import {z} from 'zod';
 import {productionConfigIssues} from '../lib/runtime-config';
 import {matchesDeclaredType} from '../lib/file-validation';
 import {rulesChecksum} from '../lib/safety/rules-approval';
+import {extractReportData} from '../lib/ocr/report-data';
 
 describe('hard safety rules',()=>{
  it('LLM_GREEN_plus_RULES_RED_is_RED',()=>expect(resolvePriority({valid:true,priorities:['RED']},'GREEN')).toBe('RED'));
@@ -33,10 +34,21 @@ describe('production release gates',()=>{
  it('fails closed when clinical provider approvals are absent',()=>{
   const issues=productionConfigIssues({DEPLOYMENT_MODE:'production',NODE_ENV:'production'} as NodeJS.ProcessEnv);
   expect(issues).toContain('EXTRACTION_DPA_APPROVED');
+  expect(issues).toContain('OCR_DPA_APPROVED');
   expect(issues).toContain('OPENAI_DATA_CONTROLS_APPROVED');
   expect(issues).toContain('TRANSLATION_DPA_APPROVED');
   expect(issues).toContain('CLINICAL_RULESET_APPROVER');
  });
  it('rejects a disguised report upload',()=>expect(matchesDeclaredType(new Uint8Array([0x4d,0x5a,0x90]),'application/pdf')).toBe(false));
  it('produces a stable clinical rules checksum',()=>expect(rulesChecksum(validateRules(defaults))).toMatch(/^[a-f0-9]{64}$/));
+ it('keeps OCR report values unverified until a staff review',()=>{
+  const extracted=extractReportData('Haemoglobin: 9.2 g/dL',{verified:false,meanConfidence:0.94});
+  expect(extracted.data).not.toHaveProperty('hb');
+  expect(extracted.data).toHaveProperty('candidateHemoglobin');
+ });
+ it('accepts an in-range haemoglobin value only after staff verification',()=>expect(extractReportData('Haemoglobin: 9.2 g/dL',{verified:true}).data).toMatchObject({hb:9.2,hbUnit:'g/dL',reviewStatus:'HUMAN_VERIFIED'}));
+ it('applies safety rules to a verified report even when symptom extraction is empty',()=>{
+  const extracted=extractReportData('Haemoglobin: 9.2 g/dL',{verified:true});
+  expect(evaluateRules({symptoms:[],hb:extracted.data.hb as number})).toMatchObject([{ruleId:'R006',priority:'YELLOW'}]);
+ });
 });

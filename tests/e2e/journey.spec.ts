@@ -1,9 +1,10 @@
 import {test,expect,type APIRequestContext} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import sharp from 'sharp';
 const credentials={health_worker:{username:'health.worker',password:'HealthWorker!2026'},medical_officer:{username:'doctor.ananya',password:'Doctor!2026'},administrator:{username:'administrator',password:'Admin!2026'}};
 async function login(request:APIRequestContext,role:keyof typeof credentials){const response=await request.post('/api/auth/credentials',{data:credentials[role]});expect(response.status()).toBe(200);}
 
-test('all demo staff credentials authenticate with assigned roles',async({request})=>{
+test('all provisioned staff credentials authenticate with assigned roles',async({request})=>{
  const accounts=[
   {username:'health.worker',password:'HealthWorker!2026',role:'health_worker'},
   {username:'nurse.meera',password:'Nurse!2026',role:'nurse'},
@@ -35,15 +36,16 @@ test('administrator sees the intake role requirement before submitting',async({p
  await expect(page.getByRole('checkbox')).toBeEnabled();
 });
 
-test('consent to audit mock journey',async({page})=>{
+test('consent to audit review journey',async({page})=>{
  await login(page.request,'health_worker');
  await page.goto('/');
  await page.getByRole('link',{name:'Start new intake'}).click();
+ await page.getByRole('spinbutton',{name:'Age',exact:true}).fill('46');
  await page.getByRole('checkbox').check();
  await page.getByRole('button',{name:'Continue to intake'}).click();
  await page.getByLabel('Original words / reviewed transcript').fill('I have had fever for four days and severe pain.');
  await page.getByRole('button',{name:'Save intake'}).click();
- await page.getByRole('button',{name:'Use synthetic CBC example'}).click();
+ await page.getByLabel('Staff-entered report text').fill('Haemoglobin: 9.2 g/dL');
  await page.getByRole('button',{name:'Organise for review'}).click();
  await expect(page.getByText('Ready for review')).toBeVisible();
  await page.getByRole('link',{name:'Open triage card'}).click();
@@ -63,13 +65,37 @@ test('consent to audit mock journey',async({page})=>{
 });
 
 test('key screens have no serious axe findings',async({page})=>{
+ await login(page.request,'health_worker');
+ const patient=await (await page.request.post('/api/patients',{data:{age:41,language:'en',consent:true}})).json();
+ const encounter=await (await page.request.post('/api/encounters',{data:{patientId:patient.data.id,text:'I have had a cough for two days.',language:'en',inputType:'text'}})).json();
+ await page.request.post('/api/triage/analyze',{data:{encounterId:encounter.data.id}});
  await login(page.request,'medical_officer');
- for(const url of ['/','/login','/privacy','/intake','/queue','/encounters/encounter-P-1003','/audit','/settings']){
+ for(const url of ['/','/login','/privacy','/intake','/queue',`/encounters/${encounter.data.id}`,'/audit','/settings']){
   await page.goto(url);
   const result=await new AxeBuilder({page}).analyze();
   const serious=result.violations.filter(item=>item.impact==='serious'||item.impact==='critical');
   expect(serious.map(item=>`${url}: ${item.id} ${item.nodes.length}`)).toEqual([]);
  }
+});
+
+test('real OCR requires staff verification before a report value affects priority',async({request})=>{
+ await login(request,'health_worker');
+ const patient=await (await request.post('/api/patients',{data:{age:52,language:'en',consent:true}})).json();
+ const encounter=await (await request.post('/api/encounters',{data:{patientId:patient.data.id,text:'I have felt tired for three days.',language:'en',inputType:'text'}})).json();
+ const svg='<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900"><rect width="100%" height="100%" fill="white"/><text x="100" y="180" font-family="Arial" font-size="64">Laboratory Report</text><text x="100" y="330" font-family="Arial" font-size="58">Haemoglobin: 9.2 g/dL</text></svg>';
+ const image=await sharp(Buffer.from(svg)).png().toBuffer();
+ const uploaded=await (await request.post('/api/reports/upload',{multipart:{encounterId:encounter.data.id,file:{name:'report.png',mimeType:'image/png',buffer:image}}})).json();
+ expect(uploaded.ok).toBe(true);
+ const ocr=await (await request.post('/api/reports/ocr',{data:{reportId:uploaded.data.reportId}})).json();
+ expect(ocr.data.rawText).toContain('9.2 g/dL');
+ const blocked=await request.post('/api/triage/analyze',{data:{encounterId:encounter.data.id}});
+ expect(blocked.status()).toBe(409);
+ const confirmed=await (await request.post('/api/reports/ocr',{data:{reportId:uploaded.data.reportId,reviewedText:ocr.data.rawText,confirmed:true}})).json();
+ expect(confirmed).toMatchObject({ok:true,data:{extractedData:{hb:9.2,reviewStatus:'HUMAN_VERIFIED'}}});
+ const triage=await (await request.post('/api/triage/analyze',{data:{encounterId:encounter.data.id}})).json();
+ expect(triage.data.note.priority).toBe('YELLOW');
+ const stored=await (await request.get(`/api/encounters/${encounter.data.id}`)).json();
+ expect(stored.data.reports[0]).toMatchObject({qualityStatus:'HUMAN_VERIFIED',rawOcr:expect.stringContaining('9.2 g/dL'),reviewedText:expect.stringContaining('9.2 g/dL'),extractedData:{hb:9.2,reviewStatus:'HUMAN_VERIFIED'}});
 });
 
 test('RED override requires reason and writes audit',async({request})=>{
@@ -110,6 +136,7 @@ test('offline intake stays pending until confirmed sync',async({page})=>{
  await login(page.request,'health_worker');
  await page.goto('/intake');
  await page.getByRole('button',{name:'Simulate offline'}).click();
+ await page.getByRole('spinbutton',{name:'Age',exact:true}).fill('35');
  await page.getByRole('checkbox').check();
  await page.getByRole('button',{name:'Continue to intake'}).click();
  await page.getByLabel('Original words / reviewed transcript').fill('I have had a cough for two days.');

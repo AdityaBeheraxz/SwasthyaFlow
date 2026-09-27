@@ -11,6 +11,7 @@
     "test": "vitest run --exclude tests/e2e/**",
     "test:e2e": "playwright test",
     "seed": "tsx db/seed.ts",
+    "seed:remove-legacy": "tsx db/remove-synthetic-seed.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx db/migrate.ts",
     "retention:run": "tsx db/retention.ts"
@@ -35,12 +36,15 @@
     "motion": "^12.23.0",
     "next": "^15.5.0",
     "openid-client": "^6.8.8",
+    "pdf-lib": "^1.17.1",
     "pg": "^8.16.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-hook-form": "^7.62.0",
     "server-only": "^0.0.1",
+    "sharp": "^0.35.4",
     "tailwind-merge": "^3.7.0",
+    "tesseract.js": "^7.0.0",
     "three": "^0.180.0",
     "zod": "^4.1.0"
   },

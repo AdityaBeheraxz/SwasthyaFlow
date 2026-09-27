@@ -7,7 +7,7 @@ import {db} from '@/lib/db/server';
 import {users} from '@/db/schema';
 export type Role='health_worker'|'nurse'|'medical_officer'|'administrator';
 export type Actor={id:string;name:string;role:Role;facilityId:string|null};
-const secret=()=>{const value=process.env.AUTH_SECRET;if(isProductionDeployment&&(!value||value.length<32))throw new Error('PRODUCTION_CONFIG_INVALID');return new TextEncoder().encode(value||'demo-only-please-set-auth-secret-before-deployment');};
+const secret=()=>{const value=process.env.AUTH_SECRET;if(isProductionDeployment&&(!value||value.length<32))throw new Error('PRODUCTION_CONFIG_INVALID');return new TextEncoder().encode(value||'local-development-only-set-a-real-secret');};
 export async function signSession(id:string,role:Role,facilityId?:string|null){return new SignJWT({role,facilityId:facilityId??null}).setProtectedHeader({alg:'HS256'}).setSubject(id).setIssuer('swasthyaflow').setAudience('swasthyaflow-web').setIssuedAt().setExpirationTime(isProductionDeployment?'8h':'12h').sign(secret());}
 export async function session():Promise<Actor|null>{
  const token=(await cookies()).get('sf_session')?.value;
