@@ -4,10 +4,10 @@ SwasthyaFlow is a staff-facing intake and review system for source-linked frontl
 
 The repository has two explicit deployment profiles:
 
-- **Local development:** PGlite, local private files, real Tesseract OCR for PNG/JPEG reports, deterministic local text extraction, and staff credentials provisioned by the seed command. No patient or encounter examples are seeded.
+- **Local development:** PGlite, local private files, real Tesseract OCR for PNG/JPEG/PDF reports, deterministic local text extraction, and staff credentials provisioned by the seed command. No patient or encounter examples are seeded.
 - **Production:** PostgreSQL with verified TLS, hospital OIDC, facility isolation, approved enterprise OCR/extraction/translation/speech providers, KMS-encrypted object storage, clinical rules approval, retention, and fail-closed readiness checks.
 
-There is no synthetic OCR fallback. If an OCR provider is unavailable, processing stops with a visible error and staff may enter a verified transcription manually.
+There is no synthetic OCR fallback. Explicit fixture mode supports only registered engineering inputs and displays a banner. If a provider is unavailable, processing stops with a visible error and staff may enter a verified transcription manually.
 
 ## Local development
 
@@ -20,7 +20,9 @@ pnpm seed
 pnpm dev
 ```
 
-Open http://localhost:3000. Local image OCR uses Tesseract.js and downloads the configured language model on first use. `OCR_LANGUAGES=eng` is the fastest baseline; add approved local language packs only after validating them. PDF OCR requires the enterprise OCR adapter because PDFs can contain multiple pages and embedded text/image combinations.
+Open http://localhost:3000. Local OCR uses Tesseract.js and downloads the configured language model on first use. `OCR_LANGUAGES=eng` is the baseline; validate additional language packs before using them. PDF OCR requires Poppler's `pdftoppm` on PATH or PDF_RENDERER_PATH. It processes at most ten pages.
+
+See [Provider interfaces](docs/PROVIDERS.md) for the independent ASR, IndicTrans2 translation, OCR and extraction modes, endpoint contracts, Hindi/Odia fixtures and offline storage limits. The environment template contains names with empty values.
 
 ### Local bootstrap accounts
 
@@ -80,3 +82,5 @@ pnpm test:e2e
 ```
 
 Automated checks verify software behavior. They do not establish clinical performance, regulatory clearance, or authorization to process patient data.
+
+Browser tests use a separate local database at `.data/e2e` on port 3001. First run `PGLITE_DATA_DIR=.data/e2e pnpm db:migrate` and `PGLITE_DATA_DIR=.data/e2e pnpm seed` (PowerShell: set `$env:PGLITE_DATA_DIR='.data/e2e'` before these commands). Reset that environment variable before running the normal preview.

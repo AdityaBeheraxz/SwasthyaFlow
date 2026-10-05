@@ -13,7 +13,7 @@ async function main() {
     await pool.end();
   } else {
     await mkdir('.data',{recursive:true});
-    const client = new PGlite('.data/swasthyaflow');
+    const client = new PGlite(process.env.PGLITE_DATA_DIR||'.data/swasthyaflow');
     await pgliteMigrate(pgliteDrizzle(client),{migrationsFolder:'db/migrations'});
     await client.close();
   }

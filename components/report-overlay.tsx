@@ -1,0 +1,10 @@
+'use client';
+import {useState} from 'react';
+import Image from 'next/image';
+type Token={text:string;confidence:number;bbox:[number,number,number,number];page?:number};
+export function ReportOverlay({id,tokens,pages}:{id:string;tokens:Token[];pages:{page:number;width:number;height:number}[]}){
+ const [page,setPage]=useState(1),[selection,setSelection]=useState<Token|null>(null),[failed,setFailed]=useState(false);
+ const dimensions=pages.find(item=>item.page===page);if(!dimensions)return <p className="small">This provider did not supply page coordinates. Open the original file to check uncertain tokens.</p>;
+ const visible=tokens.filter(token=>(token.page??1)===page&&token.confidence<0.8);
+ return <div className="stack"><label className="field">Report page<select value={page} onChange={event=>{setPage(Number(event.target.value));setSelection(null);setFailed(false);}}>{pages.map(item=><option key={item.page} value={item.page}>Page {item.page}</option>)}</select></label>{failed?<p className="error">Preview unavailable. Open the original report.</p>:<div style={{position:'relative',width:'100%',lineHeight:0}}><Image unoptimized src={'/api/reports/page/'+id+'?page='+page} alt={'Original report page '+page+' in OCR coordinate space'} width={dimensions.width} height={dimensions.height} onError={()=>setFailed(true)} style={{width:'100%',height:'auto'}}/>{visible.map((token,index)=><button key={index} type="button" aria-label={'Inspect possibly '+token.text} title={'Possibly '+token.text+' · '+Math.round(token.confidence*100)+'%'} onClick={()=>setSelection(token)} style={{position:'absolute',left:token.bbox[0]/dimensions.width*100+'%',top:token.bbox[1]/dimensions.height*100+'%',width:(token.bbox[2]-token.bbox[0])/dimensions.width*100+'%',height:(token.bbox[3]-token.bbox[1])/dimensions.height*100+'%',border:'2px solid #a56300',background:'rgba(255,196,0,.15)',padding:0,minHeight:0}}/>)}</div>}{selection&&<p role="status">Possibly “{selection.text}” · {Math.round(selection.confidence*100)}% confidence. Compare the highlighted region with the original file.</p>}</div>;
+}

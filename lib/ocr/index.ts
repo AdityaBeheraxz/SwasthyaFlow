@@ -1,7 +1,12 @@
 import {z} from 'zod';
+import {providerMode} from '../provider-mode';
 import {join} from 'node:path';
 import {createWorker,OEM} from 'tesseract.js';
-import {preprocessReportImage,type ReportMimeType} from '@/lib/file-validation';
+import {type ReportMimeType} from '@/lib/file-validation';
+import {reportPage} from './pages';
+import sharp from 'sharp';
+import {PDFDocument} from 'pdf-lib';
+import {providerFixtures,sourceHash} from '../provider-fixtures';
 
 export type OcrToken={text:string;confidence:number;bbox:[number,number,number,number];page:number};
 export type OcrResult={
@@ -11,8 +16,10 @@ export type OcrResult={
  meanConfidence:number;
  engine:string;
  warnings:string[];
+ pages?:{page:number;width:number;height:number}[];
 };
 export interface OcrAdapter{extract(document:Uint8Array,mimeType:ReportMimeType):Promise<OcrResult>}
+export const fixtureOcr:OcrAdapter={async extract(document){const fixture=(await providerFixtures()).ocr.find(item=>item.sha256===sourceHash(document));if(!fixture)throw new OcrError('OCR_EMPTY_RESULT','Fixture input is not registered.');return summarize(fixture.rawText,fixture.tokens,'fixture-ocr',['Registered engineering fixture; not a live OCR result.']);}};
 
 export class OcrError extends Error{
  constructor(public code:'OCR_NOT_CONFIGURED'|'OCR_FORMAT_UNSUPPORTED'|'OCR_PROVIDER_FAILED'|'OCR_EMPTY_RESULT',message:string){super(message);this.name='OcrError';}
@@ -30,7 +37,8 @@ function summarize(rawText:string,tokens:OcrToken[],engine:string,warnings:strin
 const enterpriseResponse=z.object({
  rawText:z.string().min(1),
  tokens:z.array(z.object({text:z.string().min(1),confidence:z.number().min(0).max(1),bbox:z.tuple([z.number(),z.number(),z.number(),z.number()]),page:z.number().int().positive().default(1)})),
- warnings:z.array(z.string()).optional()
+ warnings:z.array(z.string()).optional(),
+ pages:z.array(z.object({page:z.number().int().positive(),width:z.number().positive(),height:z.number().positive()})).optional()
 }).strict();
 
 export const enterpriseOcr:OcrAdapter={async extract(document,mimeType){
@@ -40,14 +48,14 @@ export const enterpriseOcr:OcrAdapter={async extract(document,mimeType){
  const extension=mimeType==='application/pdf'?'pdf':mimeType==='image/png'?'png':'jpg';
  const payload=document.buffer.slice(document.byteOffset,document.byteOffset+document.byteLength) as ArrayBuffer;
  form.set('document',new File([payload],`report.${extension}`,{type:mimeType}));
- form.set('languages',process.env.OCR_LANGUAGES??'eng+hin+ori');
+ form.set('languages',process.env.OCR_LANGUAGES||'eng+hin+ori');
  form.set('include_tokens','true');
  let response:Response;
  try{response=await fetch(url,{method:'POST',headers:{authorization:`Bearer ${key}`},body:form,signal:AbortSignal.timeout(45_000),cache:'no-store'});}catch{throw new OcrError('OCR_PROVIDER_FAILED','The OCR provider could not be reached. Retry or continue with manual transcription.');}
  if(!response.ok)throw new OcrError('OCR_PROVIDER_FAILED','The OCR provider rejected the document. Retry or continue with manual transcription.');
  const parsed=enterpriseResponse.safeParse(await response.json());
  if(!parsed.success)throw new OcrError('OCR_PROVIDER_FAILED','The OCR provider returned an invalid response.');
- return summarize(parsed.data.rawText,parsed.data.tokens,'enterprise-ocr',parsed.data.warnings??[]);
+ return {...summarize(parsed.data.rawText,parsed.data.tokens,'enterprise-ocr',parsed.data.warnings??[]),pages:parsed.data.pages};
 }};
 
 function wordsFromBlocks(blocks:Awaited<ReturnType<Awaited<ReturnType<typeof createWorker>>['recognize']>>['data']['blocks']):OcrToken[]{
@@ -56,9 +64,9 @@ function wordsFromBlocks(blocks:Awaited<ReturnType<Awaited<ReturnType<typeof cre
 }
 
 export const tesseractOcr:OcrAdapter={async extract(document,mimeType){
- if(mimeType==='application/pdf')throw new OcrError('OCR_FORMAT_UNSUPPORTED','PDF OCR requires the configured enterprise OCR provider. Upload a PNG or JPEG, or enter report text manually.');
- const image=await preprocessReportImage(document);
- const languages=(process.env.OCR_LANGUAGES??'eng').split('+').filter(Boolean);
+ const pageCount=mimeType==='application/pdf'?(await PDFDocument.load(document)).getPageCount():1;
+ if(pageCount>10)throw new OcrError('OCR_FORMAT_UNSUPPORTED','No more than ten report pages can be processed.');
+ const languages=(process.env.OCR_LANGUAGES||'eng').split('+').filter(Boolean);
  let worker:Awaited<ReturnType<typeof createWorker>>|undefined;
  try{
   worker=await createWorker(languages,OEM.LSTM_ONLY,{
@@ -68,8 +76,16 @@ export const tesseractOcr:OcrAdapter={async extract(document,mimeType){
    // where the Node worker script does not exist.
    workerPath:join(process.cwd(),'node_modules','tesseract.js','src','worker-script','node','index.js'),
   });
-  const result=await worker.recognize(Buffer.from(image),{rotateAuto:true},{text:true,blocks:true});
-  return summarize(result.data.text,wordsFromBlocks(result.data.blocks),'tesseract.js');
+  const texts:string[]=[],tokens:OcrToken[]=[],pages:{page:number;width:number;height:number}[]=[];
+  for(let page=1;page<=pageCount;page++){
+   const image=await reportPage(document,mimeType,page),metadata=await sharp(image).metadata();
+   let timer:ReturnType<typeof setTimeout>|undefined;
+   try{
+    const result=await Promise.race([worker.recognize(Buffer.from(image),{rotateAuto:false},{text:true,blocks:true}),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new OcrError('OCR_PROVIDER_FAILED','OCR exceeded its time limit. Retry or transcribe manually.')),30000);})]);
+    texts.push(result.data.text);tokens.push(...wordsFromBlocks(result.data.blocks).map(token=>({...token,page})));pages.push({page,width:metadata.width!,height:metadata.height!});
+   }finally{if(timer)clearTimeout(timer);}
+  }
+  return {...summarize(texts.join('\n\n'),tokens,'tesseract.js'),pages};
  }catch(error){
   if(error instanceof OcrError)throw error;
   throw new OcrError('OCR_PROVIDER_FAILED','OCR could not read this image. Check connectivity for the language model, retake the image, or enter report text manually.');
@@ -79,7 +95,9 @@ export const tesseractOcr:OcrAdapter={async extract(document,mimeType){
 const unavailableOcr:OcrAdapter={async extract(){throw new OcrError('OCR_NOT_CONFIGURED','OCR is not configured. Set OCR_MODE to tesseract or enterprise; no synthetic fallback is used.');}};
 
 export function ocrAdapter():OcrAdapter{
- if(process.env.OCR_MODE==='enterprise')return enterpriseOcr;
- if(process.env.OCR_MODE==='tesseract'||(!process.env.OCR_MODE&&process.env.DEPLOYMENT_MODE!=='production'))return tesseractOcr;
+ const mode=providerMode('OCR_MODE','tesseract',['fixture','tesseract','enterprise','unavailable']);
+ if(mode==='fixture')return fixtureOcr;
+ if(mode==='enterprise')return enterpriseOcr;
+ if(mode==='tesseract')return tesseractOcr;
  return unavailableOcr;
 }

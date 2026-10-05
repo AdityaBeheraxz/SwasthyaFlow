@@ -1,0 +1,108 @@
+{
+  "speech": [
+    {
+      "sha256": "21cb07b0b08d5b448fcf08e6fc4f0ca6ca710a6034d7673adc23ea2e16e4beb8",
+      "language": "hi",
+      "text": "मुझे चार दिन से बुखार है।",
+      "segments": [
+        {
+          "text": "मुझे चार दिन से बुखार है।",
+          "confidence": 0.96,
+          "start": 0,
+          "end": 3
+        }
+      ]
+    },
+    {
+      "sha256": "f24c4330502ae392d9f6c2680a4c74e07a778311713fe908598557a652f7eaad",
+      "language": "or",
+      "text": "ମୋତେ ଚାରି ଦିନ ହେଲା ଜ୍ୱର ହେଉଛି।",
+      "segments": [
+        {
+          "text": "ମୋତେ ଚାରି ଦିନ ହେଲା ଜ୍ୱର ହେଉଛି।",
+          "confidence": 0.65,
+          "start": 0,
+          "end": 3
+        }
+      ]
+    }
+  ],
+  "translation": [
+    {
+      "language": "hi",
+      "original": "मुझे चार दिन से बुखार है।",
+      "normalized": "I have had fever for four days.",
+      "ambiguousSpans": []
+    },
+    {
+      "language": "or",
+      "original": "ମୋତେ ଚାରି ଦିନ ହେଲା ଜ୍ୱର ହେଉଛି।",
+      "normalized": "I have had fever for four days.",
+      "ambiguousSpans": [
+        {
+          "original": "ହେଉଛି",
+          "normalized": "have had",
+          "reason": "Fixture includes an uncertain phrase for review testing."
+        }
+      ]
+    }
+  ],
+  "ocr": [
+    {
+      "sha256": "4c9c85cacd76626f02076f79c371ce06581de792d970cda9005e38e54da51d73",
+      "rawText": "हीमोग्लोबिन: 9.2 g/dL",
+      "tokens": [
+        {
+          "text": "हीमोग्लोबिन: 9.2 g/dL",
+          "confidence": 0.96,
+          "bbox": [
+            40,
+            110,
+            650,
+            160
+          ],
+          "page": 1
+        }
+      ]
+    },
+    {
+      "sha256": "5404ae12d9c9731af5c0d61734679d84e9f0873fc9ca12c459b07bee6b20d80a",
+      "rawText": "ହିମୋଗ୍ଲୋବିନ: 9.2 g/dL",
+      "tokens": [
+        {
+          "text": "ହିମୋଗ୍ଲୋବିନ: 9.2 g/dL",
+          "confidence": 0.65,
+          "bbox": [
+            40,
+            110,
+            650,
+            160
+          ],
+          "page": 1
+        }
+      ]
+    }
+  ],
+  "extraction": [
+    {
+      "language": "hi",
+      "original": "मुझे चार दिन से बुखार है।",
+      "symptoms": [
+        "fever"
+      ],
+      "duration": [
+        "4 days"
+      ]
+    },
+    {
+      "language": "or",
+      "original": "ମୋତେ ଚାରି ଦିନ ହେଲା ଜ୍ୱର ହେଉଛି।",
+      "symptoms": [
+        "fever"
+      ],
+      "duration": [
+        "4 days"
+      ]
+    }
+  ]
+}

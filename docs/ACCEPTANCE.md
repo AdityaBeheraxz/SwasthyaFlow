@@ -1,11 +1,11 @@
 # Engineering acceptance review
 
-Last verified: 2026-09-27. This record describes engineering checks performed against the repository. It is not clinical validation, regulatory clearance, or authorization to process patient data.
+Last verified: 2026-10-05. This record describes engineering checks performed against the repository. It is not clinical validation, regulatory clearance, or authorization to process patient data.
 
 | Area | Result | Evidence and limits |
 |---|---|---|
 | Report upload validation | Pass | Server checks type signatures, decoded image format, PDF structure, size, resolution, page count, entropy, sharpness, and SHA-256 provenance. |
-| OCR processing | Pass locally | Tesseract processes real PNG/JPEG bytes. The enterprise adapter is required in the production profile. PDFs require the enterprise adapter. |
+| OCR processing | Pass locally | Tesseract processes PNG/JPEG and Poppler-rendered PDF pages. An integration test verifies two-page OCR and page coordinates. Production requires enterprise OCR. |
 | Human verification boundary | Pass | Raw OCR remains immutable; reviewed text, reviewer, time, and hashes are stored separately. Unverified OCR values cannot affect priority. |
 | Verified report rules | Pass | A browser integration test confirms a reviewed haemoglobin value triggers the approved deterministic rule. |
 | Priority precedence | Pass | Unit tests cover RED precedence, rerun protection, rules failure, and override authorization. |
@@ -29,4 +29,6 @@ pnpm build
 pnpm test:e2e
 ```
 
-Recorded on 2026-09-27: type checking passed, lint passed, 23 unit and safety tests passed, all 9 browser journeys passed, and the optimized Next.js production build completed successfully.
+Recorded on 2026-10-05: type checking passed, lint passed, 42 unit/provider/safety tests passed, all 16 browser journeys passed, and the optimized Next.js production build completed successfully. Browser records were isolated in a separate test database.
+
+New checks include exact Hindi/Odia fixture registration, invalid mode and production fixture rejection, IndicTrans2 request/response contracts, malformed live responses, denied Indic symptoms, lab conflicts, duration units, source evidence, report review resets, idempotent sync/conflict handling, encrypted drafts, interrupted sync, offline document upload and real network loss. No live provider accuracy testing was performed. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for the remaining boundaries.

@@ -1,3 +1,4 @@
+import {measured} from '@/lib/metrics';
 import { z } from 'zod';
 import { and,eq } from 'drizzle-orm';
 import { db } from '@/lib/db/server';
@@ -15,7 +16,7 @@ import {consumeRateLimit} from '@/lib/rate-limit';
 import {isProductionDeployment} from '@/lib/runtime-config';
 import {rulesChecksum} from '@/lib/safety/rules-approval';
 const schema=z.object({encounterId:z.string().min(1),simulateFailure:z.enum(['ASR_FAILED','OCR_FAILED','AI_FAILED','AI_PARSE_FAILED','TRIAGE_FAILED','SAFETY_ENGINE_FAILED','SAVE_FAILED']).optional()}).strict();
-export async function POST(req:Request){
+async function analyze(req:Request){
  const actor=await session();if(!allowed(actor?.role??null,['health_worker','nurse','medical_officer']))return failure('FORBIDDEN','Intake role required.',403);
  const rate=await consumeRateLimit(`${actor!.id}:triage`,20,60);if(!rate.ok)return failure('RATE_LIMITED','Too many processing requests. Retry shortly.',429);
  let encounterId:string|undefined;
@@ -24,19 +25,22 @@ export async function POST(req:Request){
  encounterId=body.encounterId;
  const [patient]=await conn.select().from(patients).where(eq(patients.id,encounter.patientId)).limit(1);
  if(!patient?.consentStatus)return failure('CONSENT_REQUIRED','Consent must be recorded before processing.',422);
- const [report]=await conn.select().from(reports).where(eq(reports.encounterId,encounter.id)).limit(1);
- if(report?.fileUrl&&!report.reviewedText)return failure('OCR_REVIEW_REQUIRED','Confirm the extracted report text against the original report before triage.',409);
+ const storedReports=await conn.select().from(reports).where(eq(reports.encounterId,encounter.id));
+ const report=storedReports[0];
+ if(storedReports.some(item=>item.fileUrl&&!item.reviewedText))return failure('OCR_REVIEW_REQUIRED','Confirm the extracted report text against the original report before triage.',409);
  transition(encounter.state as EncounterState,'PROCESSING',true,false);
  await conn.transaction(async tx=>{await tx.update(encounters).set({state:'PROCESSING',status:'Normalizing'}).where(eq(encounters.id,encounter.id));await tx.insert(auditLogs).values({id:crypto.randomUUID(),userId:actor!.id,encounterId:encounter.id,action:'STATE_PROCESSING',metadata:{from:encounter.state}});});
  if(body.simulateFailure)throw new Error(body.simulateFailure);
  const [source]=await conn.select().from(inputs).where(eq(inputs.encounterId,encounter.id)).limit(1);
  if(!source?.originalText)throw new Error('TRIAGE_FAILED');
- const normalized=await translationAdapter().normalize(source.originalText,(source.language==='hi'||source.language==='or')?source.language:'en');
+ const normalized=await measured(actor!.facilityId!,'translation',()=>translationAdapter().normalize(source.originalText!,(source.language==='hi'||source.language==='or')?source.language:'en')).catch(()=>{throw new Error('AI_FAILED');});
  await conn.update(inputs).set({source:{...(source.source??{}),normalized:normalized.normalized,ambiguousSpans:normalized.ambiguousSpans}}).where(eq(inputs.id,source.id));
  await conn.update(encounters).set({status:'Extracting facts'}).where(eq(encounters.id,encounter.id));
- const hb=typeof report?.extractedData?.hb==='number'?report.extractedData.hb:undefined;
+ const values=storedReports.filter(item=>item.reviewedText&&typeof item.extractedData?.hb==='number').map(item=>item.extractedData!.hb as number);
+ const hb=values.length?Math.min(...values):undefined;
  const bundle={text:source.originalText,language:source.language??'en',normalizedText:normalized.normalized,reportText:report?.reviewedText??undefined,reportValues:hb===undefined?undefined:{hb}};
- const facts=await extract(bundle);
+ const facts=await measured(actor!.facilityId!,'extraction',()=>extract(bundle)).catch(error=>{throw new Error(error instanceof Error&&error.message==='AI_PARSE_FAILED'?'AI_PARSE_FAILED':'AI_FAILED');});
+ facts.ambiguous_information=[...new Set([...facts.ambiguous_information,...normalized.ambiguousSpans.map(span=>span.original+': '+span.reason)])];
  await conn.update(encounters).set({status:'Applying safety rules'}).where(eq(encounters.id,encounter.id));
  const [config]=await conn.select().from(rulesConfig).where(and(eq(rulesConfig.active,true),eq(rulesConfig.facilityId,actor!.facilityId!))).orderBy(desc(rulesConfig.version)).limit(1);
  if(!config)throw new Error('SAFETY_ENGINE_FAILED');
@@ -49,3 +53,6 @@ export async function POST(req:Request){
  return success({note});
  }catch(e){const code=e instanceof Error?e.message:'SAVE_FAILED';if(encounterId&&['ASR_FAILED','OCR_FAILED','AI_FAILED','AI_PARSE_FAILED','TRIAGE_FAILED','SAFETY_ENGINE_FAILED','SAVE_FAILED'].includes(code)){try{const conn=await db();const [stored]=await conn.select().from(encounters).where(eq(encounters.id,encounterId)).limit(1);await conn.transaction(async tx=>{await tx.update(encounters).set({state:code,status:code,priorityFinal:stored?.priorityFinal??(code==='SAFETY_ENGINE_FAILED'?'PRIORITY_UNAVAILABLE':null)}).where(eq(encounters.id,encounterId!));await tx.insert(auditLogs).values({id:crypto.randomUUID(),userId:actor!.id,encounterId:encounterId!,action:'STATE_FAILED',metadata:{state:code,previous_state:stored?.state??null}});});}catch{return failure('SAVE_FAILED','Processing failed and the failure state could not be saved. Retry or request manual review.',500);}}return ['ASR_FAILED','OCR_FAILED','AI_FAILED','AI_PARSE_FAILED','TRIAGE_FAILED','SAFETY_ENGINE_FAILED','SAVE_FAILED'].includes(code)?failure(code,`${code}: processing stopped. Retry or request manual review.`,422):parseFailure(e);}
 }
+
+
+export async function POST(request:Request){const actor=await session();return actor?.facilityId?measured(actor.facilityId,'triage',()=>analyze(request)):analyze(request);}

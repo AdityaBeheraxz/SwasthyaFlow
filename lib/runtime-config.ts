@@ -12,6 +12,10 @@ export function productionConfigIssues(env:NodeJS.ProcessEnv=process.env):string
  if(env.DATABASE_SSL_MODE!=='verify-full')issues.push('DATABASE_SSL_MODE');
  if(!env.AUTH_SECRET||env.AUTH_SECRET.length<32)issues.push('AUTH_SECRET');
  if(env.AI_MODE!=='enterprise')issues.push('AI_MODE');
+ if(env.EXTRACTION_MODE&&env.EXTRACTION_MODE!=='enterprise')issues.push('EXTRACTION_MODE');
+ if(env.ASR_MODE&&env.ASR_MODE!=='enterprise')issues.push('ASR_MODE');
+ if(env.TRANSLATION_MODE&&env.TRANSLATION_MODE!=='enterprise')issues.push('TRANSLATION_MODE');
+ if(!env.SPEECH_TO_TEXT_API_URL||!httpsUrl.safeParse(env.SPEECH_TO_TEXT_API_URL).success)issues.push('SPEECH_TO_TEXT_API_URL');
  if(!env.EXTRACTION_API_URL||!httpsUrl.safeParse(env.EXTRACTION_API_URL).success)issues.push('EXTRACTION_API_URL');
  if(!env.EXTRACTION_API_KEY)issues.push('EXTRACTION_API_KEY');
  if(env.EXTRACTION_DPA_APPROVED!=='true')issues.push('EXTRACTION_DPA_APPROVED');
@@ -19,6 +23,7 @@ export function productionConfigIssues(env:NodeJS.ProcessEnv=process.env):string
  if(!env.OCR_API_URL||!httpsUrl.safeParse(env.OCR_API_URL).success)issues.push('OCR_API_URL');
  if(!env.OCR_API_KEY)issues.push('OCR_API_KEY');
  if(env.OCR_DPA_APPROVED!=='true')issues.push('OCR_DPA_APPROVED');
+ if(!env.SPEECH_TO_TEXT_MODEL)issues.push('SPEECH_TO_TEXT_MODEL');
  if(!env.SPEECH_TO_TEXT_API_KEY)issues.push('SPEECH_TO_TEXT_API_KEY');
  if(env.OPENAI_DATA_CONTROLS_APPROVED!=='true')issues.push('OPENAI_DATA_CONTROLS_APPROVED');
  if(!env.TRANSLATION_API_URL||!httpsUrl.safeParse(env.TRANSLATION_API_URL).success)issues.push('TRANSLATION_API_URL');
@@ -44,6 +49,6 @@ export function assertProductionConfig(){
 }
 
 export function appUrl(){
- const value=process.env.APP_URL??'http://localhost:3000';
+ const value=process.env.APP_URL||'http://localhost:3000';
  return new URL(value);
 }

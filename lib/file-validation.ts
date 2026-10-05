@@ -1,5 +1,6 @@
 import {createHash} from 'node:crypto';
 import sharp from 'sharp';
+import {estimateTextTilt} from './image-quality';
 import {PDFDocument} from 'pdf-lib';
 
 export const reportMimeTypes=['image/png','image/jpeg','application/pdf'] as const;
@@ -59,6 +60,16 @@ export async function inspectReportFile(bytes:Uint8Array,type:string):Promise<Re
   if(width<900||height<700)warnings.push('Image resolution is low; capture the full report closer to the camera.');
   if(stats.entropy<2.5)warnings.push('Image contrast is low; use even lighting and avoid glare.');
   if(stats.sharpness<1)warnings.push('Image may be blurred; hold the camera steady and retake it if text is unclear.');
+  const small=await sharp(bytes).rotate().resize(128,128,{fit:'fill'}).grayscale().raw().toBuffer();
+  const tiltSample=await sharp(bytes).rotate().resize(400,400,{fit:'inside'}).grayscale().raw().toBuffer({resolveWithObject:true});
+  const tilt=estimateTextTilt(tiltSample.data,tiltSample.info.width,tiltSample.info.height);
+  if(tilt!==null)warnings.push('Text appears tilted by approximately '+Math.abs(tilt)+' degrees. Align the page and retake it if extraction is unclear.');
+  const border=[...small].filter((_,index)=>index%128<3||index%128>124||index<384||index>=16000);
+  const darkBorder=border.filter(value=>value<100).length/border.length;
+  if(darkBorder>0.12)warnings.push('Content or a dark background reaches the image edge. Check that no report text is cropped.');
+  const quadrants=[0,1,2,3].map(quadrant=>{let sum=0,count=0;for(let y=quadrant<2?0:64;y<(quadrant<2?64:128);y++)for(let x=quadrant%2?64:0;x<(quadrant%2?128:64);x++){sum+=small[y*128+x];count++;}return sum/count;});
+  if(Math.max(...quadrants)-Math.min(...quadrants)>55)warnings.push('Lighting varies across the page. Check dark areas and glare before verifying extraction.');
+  if(stats.channels.some(channel=>channel.mean<70))warnings.push('The page is dark. Retake it with more even lighting if text is unclear.');
   return {mimeType,extension:type==='image/png'?'png':'jpg',byteLength:bytes.byteLength,sha256,pageCount:1,width,height,qualityStatus:warnings.length?'QUALITY_WARNING':'READY',warnings};
  }catch(error){
   if(error instanceof ReportFileValidationError)throw error;
@@ -67,12 +78,18 @@ export async function inspectReportFile(bytes:Uint8Array,type:string):Promise<Re
 }
 
 export async function preprocessReportImage(bytes:Uint8Array){
- return new Uint8Array(await sharp(bytes,{failOn:'warning',limitInputPixels:25_000_000})
+ const processed=await sharp(bytes,{failOn:'warning',limitInputPixels:25_000_000})
   .rotate()
   .resize({width:2400,height:2400,fit:'inside',withoutEnlargement:true})
   .grayscale()
   .normalize()
+  .median(3)
   .sharpen({sigma:1})
   .png({compressionLevel:6})
-  .toBuffer());
+  .toBuffer();
+ if(process.env.OCR_ADAPTIVE_THRESHOLD!=='true')return new Uint8Array(processed);
+ const {data,info}=await sharp(processed).grayscale().raw().toBuffer({resolveWithObject:true});
+ const local=await sharp(processed).grayscale().blur(8).raw().toBuffer();
+ for(let i=0;i<data.length;i++)data[i]=data[i]<local[i]-12?0:255;
+ return new Uint8Array(await sharp(data,{raw:{width:info.width,height:info.height,channels:1}}).png().toBuffer());
 }

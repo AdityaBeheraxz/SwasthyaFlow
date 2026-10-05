@@ -1,6 +1,6 @@
-import {eq,lt} from 'drizzle-orm';
+import {and,eq,lt} from 'drizzle-orm';
 import {db} from '../lib/db/index';
-import {auditLogs,encounters,inputs,patients,referrals,reports,reviews,triageNotes} from './schema';
+import {auditLogs,encounters,inputs,patients,referrals,reports,reviews,triageNotes,facilities,processingMetrics} from './schema';
 import {objectStorage,reportStorageKey} from '../lib/storage';
 
 async function removeExpired(encounter:typeof encounters.$inferSelect){
@@ -24,8 +24,15 @@ async function removeExpired(encounter:typeof encounters.$inferSelect){
 async function main(){
  const days=Number(process.env.DATA_RETENTION_DAYS);
  if(!Number.isInteger(days)||days<1)throw new Error('DATA_RETENTION_DAYS must be a positive integer');
- const cutoff=new Date(Date.now()-days*86_400_000),conn=await db();
- const expired=await conn.select().from(encounters).where(lt(encounters.createdAt,cutoff));
+ const conn=await db();
+ const allFacilities=await conn.select().from(facilities);
+ const expired:(typeof encounters.$inferSelect)[]=[];
+ for(const facility of allFacilities){
+  const configured=Number(facility.settings.retentionDays),effective=Number.isInteger(configured)&&configured>0?configured:days;
+  const cutoff=new Date(Date.now()-effective*86400000);
+  expired.push(...await conn.select().from(encounters).where(and(eq(encounters.facilityId,facility.id),lt(encounters.createdAt,cutoff))));
+  await conn.delete(processingMetrics).where(and(eq(processingMetrics.facilityId,facility.id),lt(processingMetrics.createdAt,cutoff)));
+ }
  let removed=0;
  for(const encounter of expired){try{await removeExpired(encounter);removed++;}catch(error){console.error(`Retention purge failed for ${encounter.id}`,error);process.exitCode=1;}}
  console.log(`Retention purge complete: ${removed}/${expired.length} encounters removed`);

@@ -1,3 +1,4 @@
+import {measured} from '@/lib/metrics';
 import {session,allowed} from '@/lib/auth';
 import {failure,success} from '@/lib/api';
 import {consumeRateLimit} from '@/lib/rate-limit';
@@ -18,7 +19,7 @@ export async function POST(req:Request){
   if(audio.size>10_000_000)return failure('FILE_TOO_LARGE','Audio exceeds 10 MB.',422);
   const bytes=new Uint8Array(await audio.arrayBuffer());if(!matchesDeclaredType(bytes,audio.type))return failure('FILE_SIGNATURE_INVALID','Audio contents do not match WebM.',422);
   const audioId=crypto.randomUUID();audioKey=`audio/${audioId}.webm`;await objectStorage().put(audioKey,bytes,audio.type||'audio/webm');
-  const transcript=await speechAdapter().transcribe(new Blob([bytes],{type:audio.type}),lang as 'en'|'hi'|'or');
+  const transcript=await measured(actor!.facilityId!,'asr',()=>speechAdapter().transcribe(new Blob([bytes],{type:audio.type}),lang as 'en'|'hi'|'or'));
   return success({...transcript,audioId});
  }catch{if(audioKey)await objectStorage().delete(audioKey).catch(()=>undefined);return failure('ASR_FAILED','Transcription failed. Retry or enter the original words manually.',503);}
 }

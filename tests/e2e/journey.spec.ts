@@ -141,7 +141,7 @@ test('offline intake stays pending until confirmed sync',async({page})=>{
  await page.getByRole('button',{name:'Continue to intake'}).click();
  await page.getByLabel('Original words / reviewed transcript').fill('I have had a cough for two days.');
  await page.getByRole('button',{name:'Save intake'}).click();
- await page.getByRole('button',{name:'Organise for review'}).click();
+ await page.getByRole('button',{name:'Save encrypted draft for sync'}).click();
  await expect(page.getByRole('heading',{name:'PENDING SYNC'})).toBeVisible();
  await page.goto('/queue');
  await expect(page.getByRole('heading',{name:/PENDING SYNC/})).toBeVisible();

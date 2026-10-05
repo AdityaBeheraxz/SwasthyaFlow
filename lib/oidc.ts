@@ -27,9 +27,9 @@ export function oidcConfig(){
 export function redirectUri(){return new URL('/api/auth/callback',appUrl()).toString();}
 
 export function mappedRole(claims:Record<string,unknown>):Role|null{
- let map:unknown;try{map=JSON.parse(process.env.OIDC_ROLE_MAP??'{}');}catch{return null;}
+ let map:unknown;try{map=JSON.parse(process.env.OIDC_ROLE_MAP||'{}');}catch{return null;}
  const parsedMap=z.record(z.string(),roles).safeParse(map);if(!parsedMap.success)return null;
- const value=claims[process.env.OIDC_ROLE_CLAIM??'roles'];
+ const value=claims[process.env.OIDC_ROLE_CLAIM||'roles'];
  const values=Array.isArray(value)?value:typeof value==='string'?[value]:[];
  for(const external of values){if(typeof external==='string'&&parsedMap.data[external])return parsedMap.data[external];}
  return null;
