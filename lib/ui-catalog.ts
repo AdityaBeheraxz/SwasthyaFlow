@@ -1,5 +1,9 @@
 // Authored interface translations. Patient text and documents are not translated.
 const rows=`
+Text has not been extracted yet.|अभी पाठ नहीं निकाला गया है।|ଏପର୍ଯ୍ୟନ୍ତ ଲେଖା ବାହାର କରାଯାଇନାହିଁ।
+An assigned Health Worker, Nurse or Medical Officer is required to extract this document.|इस दस्तावेज़ से पाठ निकालने के लिए नियुक्त स्वास्थ्य कार्यकर्ता, नर्स या चिकित्सा अधिकारी आवश्यक है।|ଏହି ଦଲିଲରୁ ଲେଖା ବାହାର କରିବା ପାଇଁ ନିଯୁକ୍ତ ସ୍ୱାସ୍ଥ୍ୟକର୍ମୀ, ନର୍ସ କିମ୍ବା ମେଡିକାଲ୍ ଅଫିସର୍ ଆବଶ୍ୟକ।
+Document changes are locked while this case is processing, approved, escalated, referred or completed.|मामले की प्रक्रिया चलने या उसके अनुमोदित, उच्च समीक्षा हेतु भेजे, रेफर या पूर्ण होने पर दस्तावेज़ में बदलाव बंद हैं।|ମାମଲା ପ୍ରକ୍ରିୟାଧୀନ, ଅନୁମୋଦିତ, ଉଚ୍ଚତର ସମୀକ୍ଷାକୁ ପଠାଯାଇଥିବା, ରେଫର୍ କିମ୍ବା ସମାପ୍ତ ଅବସ୍ଥାରେ ଦଲିଲ ପରିବର୍ତ୍ତନ ବନ୍ଦ ରହେ।
+Document extraction is unavailable in this workspace.|इस कार्यक्षेत्र में दस्तावेज़ से पाठ निकालना उपलब्ध नहीं है।|ଏହି କାର୍ଯ୍ୟକ୍ଷେତ୍ରରେ ଦଲିଲରୁ ଲେଖା ବାହାର କରିବା ଉପଲବ୍ଧ ନାହିଁ।
 Website language|वेबसाइट की भाषा|ୱେବସାଇଟ୍ ଭାଷା
 Home|मुख्य पृष्ठ|ମୁଖ୍ୟ ପୃଷ୍ଠା
 New intake|नया पंजीकरण|ନୂଆ ପଞ୍ଜୀକରଣ

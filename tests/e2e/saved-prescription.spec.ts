@@ -1,0 +1,30 @@
+import {test,expect} from '@playwright/test';
+import sharp from 'sharp';
+test('health worker can extract a saved prescription in a triaged case and locked cases explain the disabled action',async({page})=>{
+ test.setTimeout(180000);
+ const r=page.request;
+ const password=process.env.E2E_HEALTH_WORKER_PASSWORD;
+ expect(password,'Set E2E_HEALTH_WORKER_PASSWORD for the local test staff account.').toBeTruthy();
+ expect((await r.post('/api/auth/credentials',{data:{username:'health.worker',password}})).status()).toBe(200);
+ const patient=(await (await r.post('/api/patients',{data:{name:'Extraction button test',age:42,language:'en',consent:true}})).json()).data;
+ const encounter=(await (await r.post('/api/encounters',{data:{patientId:patient.id,text:'Patient reports tiredness for two days.',language:'en',inputType:'text'}})).json()).data;
+ expect((await r.post('/api/triage/analyze',{data:{encounterId:encounter.id}})).status()).toBe(200);
+ const bytes=await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"><rect width="100%" height="100%" fill="white"/><text x="80" y="160" font-family="Arial" font-size="54">TEST ONLY prescription</text><text x="80" y="280" font-family="Arial" font-size="54">Tab Paracetamol 500 mg BD 3 days</text></svg>')).png().toBuffer();
+ const upload=await r.post('/api/reports/upload',{multipart:{encounterId:encounter.id,documentType:'prescription',file:{name:'saved-prescription.png',mimeType:'image/png',buffer:bytes}}});expect(upload.status()).toBe(201);
+ const reportId=(await upload.json()).data.reportId;
+ await page.setViewportSize({width:390,height:844});await page.goto('/encounters/'+encounter.id);
+ const extract=page.getByRole('button',{name:'Extract prescription',exact:true});await expect(extract).toBeVisible();await expect(extract).toBeEnabled();
+ await expect(page.getByText('Text has not been extracted yet.',{exact:true})).toBeVisible();await expect(page.getByText('OCR pending or unavailable',{exact:true})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Approve',exact:true})).toBeDisabled();
+ // A legacy locked case must explain the restriction while keeping the action visible.
+ await page.route('**/api/encounters/'+encounter.id,async route=>{const response=await route.fetch(),body=await response.json();body.data.encounter.state='APPROVED';await route.fulfill({response,json:body});});
+ await page.reload();await expect(extract).toBeVisible();await expect(extract).toBeDisabled();await expect(page.getByText('Document changes are locked while this case is processing, approved, escalated, referred or completed.',{exact:true})).toBeVisible();
+ await page.unroute('**/api/encounters/'+encounter.id);await page.reload();await expect(extract).toBeEnabled();
+ await extract.click();await expect(page.getByRole('heading',{name:'Original OCR output',exact:true})).toBeVisible({timeout:60000});
+ const source=page.locator('#source-documents > section').filter({has:page.getByRole('heading',{name:'Prescription',exact:true})});await expect(source.locator('pre').first()).toContainText('Paracetamol');
+ await source.getByText('Correct report extraction',{exact:true}).click();await expect(source.getByLabel('Reviewed report text')).toHaveValue(/Paracetamol/);
+ await source.getByRole('button',{name:'Save verified report correction'}).click();await expect(source.getByRole('heading',{name:'Staff-verified report text',exact:true})).toBeVisible();
+ const saved=(await (await r.get('/api/encounters/'+encounter.id)).json()).data.reports.find((item:{id:string})=>item.id===reportId);
+ expect(saved.ocrEngine).toBe('tesseract.js');expect(saved.qualityStatus).toBe('HUMAN_VERIFIED');expect(saved.reviewedBy).toBe('U-101');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+});
