@@ -1,0 +1,2 @@
+# Keep migration checksums stable across Windows and Linux.
+db/migrations/*.sql text eol=lf

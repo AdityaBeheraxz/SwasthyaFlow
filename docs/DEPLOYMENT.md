@@ -90,3 +90,15 @@ With fictitious test information only:
 8. Refresh the deployment and verify saved records and originals survive. Sign out and confirm protected routes require authorization.
 
 Schedule retention only after choosing the test-data lifetime and configuring an authenticated worker. There is no implied background scheduler on Vercel for the existing local CLI workers. Clear test data after the hackathon. Clinical deployment remains blocked behind the existing identity, approved providers, privacy, storage and clinical ruleset gates.
+
+## Configured hackathon project
+
+The existing project `whigbynlzznmnsltdwsf` was verified in `ap-southeast-1` (Singapore). Vercel functions use Mumbai. This is a test-data deployment; it does not establish Indian data residency.
+
+The cloud database has 16 application tables, eight test staff logins, four labelled facility workspaces, nine referral routes, and baseline rulesets. The original local database is separate. Private uploads use `swasthyaflow-private` with no public access.
+
+The runtime connection uses `swasthyaflow_app`, which has no schema creation privileges and cannot update or delete audit entries. It has explicit server-only policies on application tables; facility, staff role and consent authorization remain enforced in the application's server routes. Browser `anon` and `authenticated` roles have no table grants. The separate `swasthyaflow_migrator` owns the application tables and the pre-created `drizzle` schema. It has no database-wide CREATE grant. The PostgreSQL migration runner checks the existing schema, locks and validates migration history, and applies pending changes transactionally.
+
+The Supabase-only role bootstrap is versioned under `db/supabase/`. Apply it only after the application migrations, using a project administrator. Login passwords are configured separately; never put passwords or password verifiers in migration files. New tables need explicit runtime grants and server-only RLS policies in their migration. The official Supabase root CA is configured locally and in Vercel; certificate and hostname verification stay enabled.
+
+Deployment secrets remain in ignored `.env.deploy.local` and Vercel's encrypted environment settings. Test website sign-in details are saved in ignored `.data/hosted-access.txt`; that file contains website passwords, not infrastructure keys. Never commit or publish it.
