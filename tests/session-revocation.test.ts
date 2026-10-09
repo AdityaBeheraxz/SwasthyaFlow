@@ -11,6 +11,7 @@ vi.mock('@/lib/db/server',()=>({db:async()=>state.conn}));
 import {session,signSession,type Actor} from '../lib/auth';
 import {clinicalReviewerSession,signReviewer} from '../lib/reviewer-auth';
 import {referralWorkspaceSession,signReferralWorkspace} from '../lib/referral-workspace-auth';
+import {POST as logout} from '../app/api/auth/logout/route';
 let client:PGlite,conn:ReturnType<typeof drizzle>;
 const owner:Actor={id:'owner',name:'Owner',role:'health_worker',facilityId:'F1'};
 const doctor:Actor={id:'doctor',name:'Doctor',role:'medical_officer',facilityId:'F1'};
@@ -42,4 +43,18 @@ it('revokes reviewer and receiving credentials while retaining the owner session
  state.cookies.set('sf_reviewer_session',await signReviewer(nurse,owner));expect(await clinicalReviewerSession()).toEqual(nurse);
  await revoke(nurse.id,'USER_SIGNED_OUT');expect(await clinicalReviewerSession()).toEqual(owner);
  await revoke(owner.id,'USER_SIGNED_OUT');expect(await clinicalReviewerSession()).toBeNull();expect(await referralWorkspaceSession()).toBeNull();
+});
+it('JSON sign-out clears all workspace cookies and revokes replayed tokens',async()=>{
+ state.cookies.set('sf_reviewer_session',await signReviewer(doctor,owner));
+ state.cookies.set('sf_referral_session',await signReferralWorkspace(receiver,owner));
+ const response=await logout(new Request('https://example.test/api/auth/logout',{method:'POST',headers:{accept:'application/json'}}));
+ expect(response.status).toBe(200);expect(await response.json()).toEqual({ok:true,data:{signedOut:true}});
+ for(const [name,path] of [['sf_session','/'],['sf_reviewer_session','/api'],['sf_referral_session','/api/referrals']]){
+  const cookie=response.cookies.get(name);expect(cookie?.value).toBe('');expect(cookie?.path).toBe(path);
+  expect(cookie?.maxAge===0||Number(cookie?.expires)===0).toBe(true);
+ }
+ expect(response.headers.get('clear-site-data')).toBe('"cache", "storage"');
+ expect(await session()).toBeNull();expect(await clinicalReviewerSession()).toBeNull();expect(await referralWorkspaceSession()).toBeNull();
+ const events=await conn.select().from(auditLogs).where(eq(auditLogs.action,'USER_SIGNED_OUT'));expect(events).toHaveLength(1);expect(events[0].userId).toBe(owner.id);
+ const legacy=await logout(new Request('https://example.test/api/auth/logout',{method:'POST'}));expect(legacy.status).toBe(303);
 });
