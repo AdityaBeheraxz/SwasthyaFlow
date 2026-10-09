@@ -1,0 +1,21 @@
+import {test,expect} from '@playwright/test';
+test('priority override shows missing requirements, records the doctor decision and audit, and displays server errors',async({page})=>{
+ test.setTimeout(180000);
+ const workerPassword=process.env.E2E_HEALTH_WORKER_PASSWORD,doctorPassword=process.env.E2E_DOCTOR_PASSWORD;
+ expect(workerPassword,'Set E2E_HEALTH_WORKER_PASSWORD.').toBeTruthy();expect(doctorPassword,'Set E2E_DOCTOR_PASSWORD.').toBeTruthy();
+ const r=page.request;expect((await r.post('/api/auth/credentials',{data:{username:'health.worker',password:workerPassword}})).status()).toBe(200);
+ const patient=(await (await r.post('/api/patients',{data:{age:45,language:'en',consent:true}})).json()).data;
+ const encounter=(await (await r.post('/api/encounters',{data:{patientId:patient.id,text:'Patient reports difficulty breathing.',language:'en',inputType:'text'}})).json()).data;
+ expect((await r.post('/api/triage/analyze',{data:{encounterId:encounter.id}})).status()).toBe(200);
+ await page.goto('/encounters/'+encounter.id);
+ const form=page.getByRole('form',{name:'Override priority'}),button=form.getByRole('button',{name:'Record override',exact:true});
+ await expect(button).toBeDisabled();await expect(form).toContainText('Authorize a Medical Officer to override priority.');await expect(form).toContainText('Enter a written reason of at least 10 characters.');await expect(form).toContainText('Current priority: RED');
+ await form.getByLabel('New priority').selectOption('YELLOW');await form.getByLabel('Written reason').fill('Verified original source information.');await expect(button).toBeDisabled();
+ await page.getByLabel('Reviewer username').fill('doctor.ananya');await page.getByLabel('Reviewer password').fill(doctorPassword!);await page.getByRole('button',{name:'Authorize reviewer in this case'}).click();await expect(button).toBeEnabled();
+ await form.getByLabel('New priority').selectOption('RED');await expect(button).toBeDisabled();await expect(form).toContainText('Select a different priority.');
+ await form.getByLabel('New priority').selectOption('YELLOW');await form.getByLabel('Written reason').fill('short');await expect(button).toBeDisabled();
+ await form.getByLabel('Written reason').fill('Verified original source information.');await button.click();await expect(form).toContainText('Priority override saved.');await expect(page.locator('.priority-word')).toContainText('YELLOW');await expect(form).toContainText('Current priority: YELLOW');
+ const audit=(await (await r.get('/api/audit/'+encounter.id)).json()).data;const override=audit.find((entry:{action:string})=>entry.action==='RISK_OVERRIDE');expect(override.userId).toBe('U-104');expect(override.metadata).toMatchObject({previous_priority:'RED',new_priority:'YELLOW',reason:'Verified original source information.'});
+ await form.getByLabel('New priority').selectOption('RED');await form.getByLabel('Written reason').fill('This is a diagnosis of infection.');await button.click();await expect(form.getByRole('alert')).toContainText('NON_DIAGNOSTIC_GUARD');await expect(page.locator('.priority-word')).toContainText('YELLOW');
+ await page.getByRole('button',{name:'Close reviewer authorization'}).click();await expect(button).toBeDisabled();await expect(form).toContainText('Authorize a Medical Officer to override priority.');
+});

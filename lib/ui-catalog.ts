@@ -1,5 +1,15 @@
 // Authored interface translations. Patient text and documents are not translated.
 const rows=`
+Current priority:|वर्तमान प्राथमिकता:|ବର୍ତ୍ତମାନ ପ୍ରାଥମିକତା:
+(current)|वर्तमान|ବର୍ତ୍ତମାନ
+Select a new priority.|नई प्राथमिकता चुनें।|ନୂଆ ପ୍ରାଥମିକତା ବାଛନ୍ତୁ।
+Enter a written reason of at least 10 characters.|कम से कम 10 अक्षरों का लिखित कारण दर्ज करें।|ଅତି କମରେ ୧୦ ଅକ୍ଷରର ଲିଖିତ କାରଣ ଦିଅନ୍ତୁ।
+Before recording an override:|प्राथमिकता बदलाव दर्ज करने से पहले:|ପ୍ରାଥମିକତା ପରିବର୍ତ୍ତନ ଲେଖିବା ପୂର୍ବରୁ:
+Wait for processing to finish before overriding priority.|प्राथमिकता बदलने से पहले प्रक्रिया पूरी होने दें।|ପ୍ରାଥମିକତା ବଦଳାଇବା ପୂର୍ବରୁ ପ୍ରକ୍ରିୟା ସମାପ୍ତ ହେବାକୁ ଦିଅନ୍ତୁ।
+A valid review priority is required before an override.|बदलाव से पहले मान्य समीक्षा प्राथमिकता आवश्यक है।|ପରିବର୍ତ୍ତନ ପୂର୍ବରୁ ବୈଧ ସମୀକ୍ଷା ପ୍ରାଥମିକତା ଆବଶ୍ୟକ।
+Saving priority override…|प्राथमिकता बदलाव सहेजा जा रहा है…|ପ୍ରାଥମିକତା ପରିବର୍ତ୍ତନ ସଂରକ୍ଷଣ ହେଉଛି…
+Priority override saved. The doctor, written reason and priority change are recorded in the audit trail.|प्राथमिकता बदलाव सहेजा गया। डॉक्टर, लिखित कारण और बदलाव ऑडिट में दर्ज हैं।|ପ୍ରାଥମିକତା ପରିବର୍ତ୍ତନ ସଂରକ୍ଷିତ। ଡାକ୍ତର, ଲିଖିତ କାରଣ ଓ ପରିବର୍ତ୍ତନ ଅଡିଟ୍‌ରେ ଲିଖିତ।
+The override was not saved. Please retry.|प्राथमिकता बदलाव नहीं सहेजा गया। फिर प्रयास करें।|ପ୍ରାଥମିକତା ପରିବର୍ତ୍ତନ ସଂରକ୍ଷିତ ହୋଇନାହିଁ। ପୁଣି ଚେଷ୍ଟା କରନ୍ତୁ।
 Text has not been extracted yet.|अभी पाठ नहीं निकाला गया है।|ଏପର୍ଯ୍ୟନ୍ତ ଲେଖା ବାହାର କରାଯାଇନାହିଁ।
 An assigned Health Worker, Nurse or Medical Officer is required to extract this document.|इस दस्तावेज़ से पाठ निकालने के लिए नियुक्त स्वास्थ्य कार्यकर्ता, नर्स या चिकित्सा अधिकारी आवश्यक है।|ଏହି ଦଲିଲରୁ ଲେଖା ବାହାର କରିବା ପାଇଁ ନିଯୁକ୍ତ ସ୍ୱାସ୍ଥ୍ୟକର୍ମୀ, ନର୍ସ କିମ୍ବା ମେଡିକାଲ୍ ଅଫିସର୍ ଆବଶ୍ୟକ।
 Document changes are locked while this case is processing, approved, escalated, referred or completed.|मामले की प्रक्रिया चलने या उसके अनुमोदित, उच्च समीक्षा हेतु भेजे, रेफर या पूर्ण होने पर दस्तावेज़ में बदलाव बंद हैं।|ମାମଲା ପ୍ରକ୍ରିୟାଧୀନ, ଅନୁମୋଦିତ, ଉଚ୍ଚତର ସମୀକ୍ଷାକୁ ପଠାଯାଇଥିବା, ରେଫର୍ କିମ୍ବା ସମାପ୍ତ ଅବସ୍ଥାରେ ଦଲିଲ ପରିବର୍ତ୍ତନ ବନ୍ଦ ରହେ।
