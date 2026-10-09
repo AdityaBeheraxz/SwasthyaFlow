@@ -1,7 +1,14 @@
 node_modules/
 .next/
 .data/
-.env.local
+.env
+.env.*
+!.env.example
+!.env.vercel.example
+.vercel/
+*.pem
+*.key
+assets/ocr/*.traineddata
 *.tsbuildinfo
 playwright-report/
 test-results/

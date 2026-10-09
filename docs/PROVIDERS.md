@@ -2,9 +2,11 @@
 
 ASR, translation, OCR and fact extraction have separate interfaces and environment selectors. Endpoint URLs, models and credentials come from environment variables. The committed `.env.example` lists names without values. Empty variables use the documented local defaults; live adapters require their credentials and URLs.
 
+All remote adapters are additionally denied unless EXTERNAL_PROCESSING_APPROVED, PROVIDER_NO_TRAINING_APPROVED and PROVIDER_NO_RETENTION_APPROVED are explicitly true, PROVIDER_DATA_REGION is IN and ALLOWED_PROVIDER_ORIGINS contains the exact HTTPS origin. Redirects are refused. Do not set approval flags without contract and deployment evidence. These requirements apply in development too. See [INDIA_PRIVACY_SAFETY.md](INDIA_PRIVACY_SAFETY.md).
+
 | Stage | Environment selector | Local choices | Endpoint configuration |
 |---|---|---|---|
-| Speech | ASR_MODE | unavailable, fixture | SPEECH_TO_TEXT_API_URL, SPEECH_TO_TEXT_MODEL, SPEECH_TO_TEXT_API_KEY |
+| Speech | ASR_MODE | local, unavailable, fixture | LOCAL_ASR_PYTHON, LOCAL_ASR_MODEL_PATH; or SPEECH_TO_TEXT_API_URL, SPEECH_TO_TEXT_MODEL, SPEECH_TO_TEXT_API_KEY |
 | IndicTrans2 | TRANSLATION_MODE | local, fixture | TRANSLATION_API_URL, TRANSLATION_API_KEY |
 | OCR | OCR_MODE | tesseract, fixture | OCR_API_URL, OCR_API_KEY, OCR_LANGUAGES |
 | Extraction | EXTRACTION_MODE | local, fixture | EXTRACTION_API_URL, EXTRACTION_API_KEY |
@@ -25,7 +27,7 @@ Set ASR_MODE, TRANSLATION_MODE, OCR_MODE and EXTRACTION_MODE to `fixture` in you
 
 `speech-hi.bin` and `speech-or.bin` are **engineering byte vectors**, not recordings. They test the ASR adapter directly and intentionally do not pass the WebM upload validator. The report PNGs are labelled engineering fixtures. These files establish interface behavior only. They are not accuracy samples, patient data or clinical validation.
 
-All provider selectors reject fixture/local/live modes in the production profile. Production requires enterprise endpoints and existing provider approval gates. No live endpoints were supplied or tested.
+All provider selectors reject fixture/local/live modes in the production profile. Production requires enterprise endpoints and existing provider approval gates. No live endpoints were supplied or tested. [Local speech](LOCAL_SPEECH.md) uses an installed CPU model without an API key and supports English/Hindi.
 
 ## Local OCR and documents
 

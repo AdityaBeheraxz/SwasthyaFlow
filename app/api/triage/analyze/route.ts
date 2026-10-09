@@ -4,7 +4,8 @@ import { and,eq } from 'drizzle-orm';
 import { db } from '@/lib/db/server';
 import { encounters,patients,triageNotes,auditLogs,inputs,reports,rulesConfig } from '@/db/schema';
 import {desc} from 'drizzle-orm';
-import { session,allowed } from '@/lib/auth';
+import {allowed} from '@/lib/auth';
+import {clinicalReviewerSession as session} from '@/lib/reviewer-auth';
 import { failure,success,parseFailure } from '@/lib/api';
 import { extract,assemble } from '@/lib/pipeline';
 import {translationAdapter} from '@/lib/translation';
@@ -26,19 +27,19 @@ async function analyze(req:Request){
  const [patient]=await conn.select().from(patients).where(eq(patients.id,encounter.patientId)).limit(1);
  if(!patient?.consentStatus)return failure('CONSENT_REQUIRED','Consent must be recorded before processing.',422);
  const storedReports=await conn.select().from(reports).where(eq(reports.encounterId,encounter.id));
- const report=storedReports[0];
+
  if(storedReports.some(item=>item.fileUrl&&!item.reviewedText))return failure('OCR_REVIEW_REQUIRED','Confirm the extracted report text against the original report before triage.',409);
  transition(encounter.state as EncounterState,'PROCESSING',true,false);
- await conn.transaction(async tx=>{await tx.update(encounters).set({state:'PROCESSING',status:'Normalizing'}).where(eq(encounters.id,encounter.id));await tx.insert(auditLogs).values({id:crypto.randomUUID(),userId:actor!.id,encounterId:encounter.id,action:'STATE_PROCESSING',metadata:{from:encounter.state}});});
+ await conn.transaction(async tx=>{const claimed=await tx.update(encounters).set({state:'PROCESSING',status:'Normalizing'}).where(and(eq(encounters.id,encounter.id),eq(encounters.state,encounter.state))).returning({id:encounters.id});if(!claimed.length)throw new Error('CASE_CHANGED');await tx.insert(auditLogs).values({id:crypto.randomUUID(),userId:actor!.id,encounterId:encounter.id,action:'STATE_PROCESSING',metadata:{from:encounter.state}});});
  if(body.simulateFailure)throw new Error(body.simulateFailure);
  const [source]=await conn.select().from(inputs).where(eq(inputs.encounterId,encounter.id)).limit(1);
  if(!source?.originalText)throw new Error('TRIAGE_FAILED');
  const normalized=await measured(actor!.facilityId!,'translation',()=>translationAdapter().normalize(source.originalText!,(source.language==='hi'||source.language==='or')?source.language:'en')).catch(()=>{throw new Error('AI_FAILED');});
  await conn.update(inputs).set({source:{...(source.source??{}),normalized:normalized.normalized,ambiguousSpans:normalized.ambiguousSpans}}).where(eq(inputs.id,source.id));
  await conn.update(encounters).set({status:'Extracting facts'}).where(eq(encounters.id,encounter.id));
- const values=storedReports.filter(item=>item.reviewedText&&typeof item.extractedData?.hb==='number').map(item=>item.extractedData!.hb as number);
+ const values=storedReports.filter(item=>item.documentType!=='prescription'&&item.reviewedText&&typeof item.extractedData?.hb==='number').map(item=>item.extractedData!.hb as number);
  const hb=values.length?Math.min(...values):undefined;
- const bundle={text:source.originalText,language:source.language??'en',normalizedText:normalized.normalized,reportText:report?.reviewedText??undefined,reportValues:hb===undefined?undefined:{hb}};
+ const bundle={text:source.originalText,language:source.language??'en',normalizedText:normalized.normalized,reportText:storedReports.filter(item=>item.reviewedText).map(item=>item.documentType+' source:\n'+item.reviewedText).join('\n\n')||undefined,reportValues:hb===undefined?undefined:{hb}};
  const facts=await measured(actor!.facilityId!,'extraction',()=>extract(bundle)).catch(error=>{throw new Error(error instanceof Error&&error.message==='AI_PARSE_FAILED'?'AI_PARSE_FAILED':'AI_FAILED');});
  facts.ambiguous_information=[...new Set([...facts.ambiguous_information,...normalized.ambiguousSpans.map(span=>span.original+': '+span.reason)])];
  await conn.update(encounters).set({status:'Applying safety rules'}).where(eq(encounters.id,encounter.id));
@@ -51,7 +52,7 @@ async function analyze(req:Request){
  const [existingNote]=await conn.select().from(triageNotes).where(eq(triageNotes.encounterId,encounter.id)).limit(1);
  await conn.transaction(async tx=>{if(existingNote)await tx.update(triageNotes).set(note).where(eq(triageNotes.id,existingNote.id));else await tx.insert(triageNotes).values({id:crypto.randomUUID(),encounterId:encounter.id,...note});await tx.update(encounters).set({state:'TRIAGED',status:'TRIAGED',priority:note.priority,priorityFinal:note.priority,prioritySource:'RULES',symptoms:facts.patient_reported.symptoms,timeline:facts.timeline}).where(eq(encounters.id,encounter.id));await tx.insert(auditLogs).values({id:crypto.randomUUID(),userId:actor!.id,encounterId:encounter.id,action:'TRIAGE_COMPLETED',metadata:{priority:note.priority,rule_ids:note.riskSignals.map(rule=>rule.ruleId)}});});
  return success({note});
- }catch(e){const code=e instanceof Error?e.message:'SAVE_FAILED';if(encounterId&&['ASR_FAILED','OCR_FAILED','AI_FAILED','AI_PARSE_FAILED','TRIAGE_FAILED','SAFETY_ENGINE_FAILED','SAVE_FAILED'].includes(code)){try{const conn=await db();const [stored]=await conn.select().from(encounters).where(eq(encounters.id,encounterId)).limit(1);await conn.transaction(async tx=>{await tx.update(encounters).set({state:code,status:code,priorityFinal:stored?.priorityFinal??(code==='SAFETY_ENGINE_FAILED'?'PRIORITY_UNAVAILABLE':null)}).where(eq(encounters.id,encounterId!));await tx.insert(auditLogs).values({id:crypto.randomUUID(),userId:actor!.id,encounterId:encounterId!,action:'STATE_FAILED',metadata:{state:code,previous_state:stored?.state??null}});});}catch{return failure('SAVE_FAILED','Processing failed and the failure state could not be saved. Retry or request manual review.',500);}}return ['ASR_FAILED','OCR_FAILED','AI_FAILED','AI_PARSE_FAILED','TRIAGE_FAILED','SAFETY_ENGINE_FAILED','SAVE_FAILED'].includes(code)?failure(code,`${code}: processing stopped. Retry or request manual review.`,422):parseFailure(e);}
+ }catch(e){const code=e instanceof Error?e.message:'SAVE_FAILED';if(code==='CASE_CHANGED'||code==='ILLEGAL_TRANSITION')return failure('CASE_CHANGED','The case changed or is already processing. Refresh before retrying.',409);if(encounterId&&['ASR_FAILED','OCR_FAILED','AI_FAILED','AI_PARSE_FAILED','TRIAGE_FAILED','SAFETY_ENGINE_FAILED','SAVE_FAILED'].includes(code)){try{const conn=await db();const [stored]=await conn.select().from(encounters).where(eq(encounters.id,encounterId)).limit(1);await conn.transaction(async tx=>{await tx.update(encounters).set({state:code,status:code,priorityFinal:stored?.priorityFinal??(code==='SAFETY_ENGINE_FAILED'?'PRIORITY_UNAVAILABLE':null)}).where(eq(encounters.id,encounterId!));await tx.insert(auditLogs).values({id:crypto.randomUUID(),userId:actor!.id,encounterId:encounterId!,action:'STATE_FAILED',metadata:{state:code,previous_state:stored?.state??null}});});}catch{return failure('SAVE_FAILED','Processing failed and the failure state could not be saved. Retry or request manual review.',500);}}return ['ASR_FAILED','OCR_FAILED','AI_FAILED','AI_PARSE_FAILED','TRIAGE_FAILED','SAFETY_ENGINE_FAILED','SAVE_FAILED'].includes(code)?failure(code,`${code}: processing stopped. Retry or request manual review.`,422):parseFailure(e);}
 }
 
 

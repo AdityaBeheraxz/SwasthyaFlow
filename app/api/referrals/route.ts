@@ -1,11 +1,37 @@
-import {z} from 'zod';
-import {eq} from 'drizzle-orm';
+import {and,eq,desc} from 'drizzle-orm';
 import {db} from '@/lib/db/server';
-import {encounters,patients,triageNotes,referrals,auditLogs} from '@/db/schema';
-import {session,allowed} from '@/lib/auth';
-import {failure,success,parseFailure} from '@/lib/api';
-import {assertNonDiagnostic} from '@/lib/safety/resolve';
+import {clinicalReviewerSession as session} from '@/lib/reviewer-auth';
 import {encounterForActor} from '@/lib/access';
-const schema=z.object({encounterId:z.string().min(1),content:z.string().trim().min(20)}).strict();
-export async function POST(req:Request){const actor=await session();if(!allowed(actor?.role??null,['medical_officer']))return failure('FORBIDDEN','Medical Officer role required.',403);try{const body=schema.parse(await req.json());assertNonDiagnostic(body.content);const conn=await db();const encounter=await encounterForActor(body.encounterId,actor!);if(!encounter)return failure('NOT_FOUND','Encounter not found.',404);if(!['APPROVED','ESCALATED','REFERRAL_GENERATED'].includes(encounter.state))return failure('REVIEW_REQUIRED','Approve or escalate before generating a referral.',422);await conn.transaction(async tx=>{await tx.insert(referrals).values({id:crypto.randomUUID(),encounterId:body.encounterId,content:body.content});await tx.update(encounters).set({state:'REFERRAL_GENERATED',status:'REFERRAL_GENERATED'}).where(eq(encounters.id,body.encounterId));await tx.insert(auditLogs).values({id:crypto.randomUUID(),userId:actor!.id,encounterId:body.encounterId,action:'REFERRAL_GENERATED',metadata:{}});});return success({content:body.content});}catch(e){if(e instanceof Error&&e.message==='AI_PARSE_FAILED')return failure('NON_DIAGNOSTIC_GUARD','Referral contains disallowed diagnosis or treatment language.',422);return parseFailure(e);}}
-export async function GET(req:Request){const actor=await session();if(!actor)return failure('UNAUTHORIZED','Sign in is required.',401);const id=new URL(req.url).searchParams.get('encounterId');if(!id)return failure('VALIDATION_FAILED','Encounter ID required.',422);const conn=await db();const encounter=await encounterForActor(id,actor);if(!encounter)return failure('NOT_FOUND','Encounter not found.',404);const [[patient],[note]]=await Promise.all([conn.select().from(patients).where(eq(patients.id,encounter.patientId)).limit(1),conn.select().from(triageNotes).where(eq(triageNotes.encounterId,id)).limit(1)]);const content=`REFERRAL SUMMARY\n\nPatient ID: ${patient.anonymousPatientId}\nAge: ${patient.age}\nPreferred Language: ${patient.preferredLanguage}\n\nReason for Referral: Qualified review requested\n\nReported Symptoms: ${encounter.symptoms.join(', ')||'Unknown'}\n\nTimeline: ${encounter.timeline.join('; ')||'Unknown'}\n\nRelevant Available Information: ${note?.summary??'No structured note available'}\n\nUploaded Reports: Refer to source record\n\nMissing Information: ${note?.missingInformation.join('; ')||'Unknown'}\n\nFollow-up / Review Questions: ${note?.followUpQuestions.join('; ')||'Unknown'}\n\nAI Review Priority: ${encounter.priorityFinal??'PRIORITY_UNAVAILABLE'}\n\nAttachments: Source record\n\nReviewer Status: ${encounter.state}\n\nAI-assisted administrative summary. Clinical assessment and referral decision remain with qualified healthcare staff.`;return success({content});}
+import {failure,success,parseFailure} from '@/lib/api';
+import {referrals,referralRecipients,patients,triageNotes,reviews,encounters,facilities,auditLogs,referralDeliveries} from '@/db/schema';
+import {referralSchema,referralConsentVersion,type ReferralReport} from '@/lib/referral-policy';
+import {assertNonDiagnostic} from '@/lib/safety/resolve';
+export async function GET(req:Request){const actor=await session();if(actor?.role!=='medical_officer'||!actor.facilityId)return failure('FORBIDDEN','Medical Officer role required.',403);const id=new URL(req.url).searchParams.get('encounterId')??'';if(!await encounterForActor(id,actor))return failure('NOT_FOUND','Encounter not found.',404);const rows=await (await db()).select({id:referrals.id,recipientId:referrals.recipientId,content:referrals.content,createdAt:referrals.createdAt,deliveryStatus:referrals.deliveryStatus,decision:referralDeliveries.decision}).from(referrals).leftJoin(referralDeliveries,eq(referralDeliveries.id,referrals.id)).where(eq(referrals.encounterId,id)).orderBy(desc(referrals.createdAt));return success(rows.filter(r=>{try{return JSON.parse(r.content).version===1;}catch{return false;}}));}
+export async function POST(req:Request){
+ const actor=await session();if(actor?.role!=='medical_officer'||!actor.facilityId)return failure('FORBIDDEN','Medical Officer role required.',403);
+ try{
+  const data=referralSchema.parse(await req.json());assertNonDiagnostic(data.reason);
+  const encounter=await encounterForActor(data.encounterId,actor);if(!encounter)return failure('NOT_FOUND','Encounter not found.',404);
+  if(!['APPROVED','REFERRAL_GENERATED'].includes(encounter.state))return failure('APPROVAL_REQUIRED','Approve the reviewed case before creating a referral.',409);
+  const conn=await db();const [[recipient],[patient],[note],[approval],[facility]]=await Promise.all([
+   conn.select().from(referralRecipients).where(and(eq(referralRecipients.id,data.recipientId),eq(referralRecipients.facilityId,actor.facilityId),eq(referralRecipients.active,true))).limit(1),
+   conn.select().from(patients).where(eq(patients.id,encounter.patientId)).limit(1),conn.select().from(triageNotes).where(eq(triageNotes.encounterId,encounter.id)).limit(1),
+   conn.select().from(reviews).where(and(eq(reviews.encounterId,encounter.id),eq(reviews.decision,'APPROVE'))).limit(1),conn.select().from(facilities).where(eq(facilities.id,actor.facilityId)).limit(1)
+  ]);
+  if(!recipient)return failure('RECIPIENT_UNAVAILABLE','Choose an active verified recipient from your facility directory.',422);
+  if(!patient?.consentStatus||!note||!approval||!facility)return failure('APPROVAL_REQUIRED','A consented, doctor-approved reviewed note is required.',409);
+  if(patient.age<18&&data.consentAuthority!=='guardian')return failure('GUARDIAN_REQUIRED','Guardian consent is required for a child.',422);
+  if(note.summary.length>20000)return failure('SUMMARY_TOO_LONG','Shorten and approve the factual summary before creating a referral.',422);
+  assertNonDiagnostic(note.summary);
+  const id=crypto.randomUUID(),now=new Date();const report:ReferralReport={version:1,recipient:{name:recipient.name,kind:recipient.kind,institution:recipient.institution,department:recipient.department,registrationNumber:recipient.registrationNumber},patient:{reference:patient.anonymousPatientId,name:data.includeName?patient.name:null,age:patient.age,language:patient.preferredLanguage},sourceFacility:facility.name,doctor:actor.name,createdAt:now.toISOString(),reason:data.reason,summary:note.summary,priority:encounter.priorityFinal??'Unavailable',consentAuthority:data.consentAuthority,consentVersion:referralConsentVersion,deliveryStatus:'NOT_SENT'};
+  await conn.transaction(async tx=>{
+   const [consented]=await tx.select({id:patients.id}).from(patients).where(and(eq(patients.id,patient.id),eq(patients.consentStatus,true))).for('update');const [active]=await tx.select({id:referralRecipients.id}).from(referralRecipients).where(and(eq(referralRecipients.id,recipient.id),eq(referralRecipients.active,true))).for('update');if(!consented||!active)throw new Error('STALE_CASE');
+   const rows=await tx.update(encounters).set({state:'REFERRAL_GENERATED',status:'REFERRAL_GENERATED'}).where(and(eq(encounters.id,encounter.id),eq(encounters.state,encounter.state))).returning({id:encounters.id});if(!rows.length)throw new Error('STALE_CASE');
+   await tx.insert(referrals).values({id,encounterId:encounter.id,recipientId:recipient.id,approvedBy:actor.id,consentAt:now,content:JSON.stringify(report),deliveryStatus:'NOT_SENT'});
+   await tx.insert(auditLogs).values({id:crypto.randomUUID(),userId:actor.id,facilityId:actor.facilityId,encounterId:encounter.id,action:'REFERRAL_CREATED',metadata:{referralId:id,recipientId:recipient.id,consentAuthority:data.consentAuthority,consentVersion:referralConsentVersion,includeName:data.includeName,deliveryStatus:'NOT_SENT'}});
+  });return success({id,report,deliveryStatus:'NOT_SENT'},201);
+ }catch(e){if(e instanceof Error&&e.message==='AI_PARSE_FAILED')return failure('NON_DIAGNOSTIC_GUARD','Referral text must contain factual concerns only, without diagnosis or treatment advice.',422);if(e instanceof Error&&e.message==='STALE_CASE')return failure('STALE_CASE','The case changed. Reload and retry.',409);return parseFailure(e);}
+}
+
+
+

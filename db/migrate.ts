@@ -5,13 +5,14 @@ import { drizzle as pgliteDrizzle } from 'drizzle-orm/pglite';
 import { drizzle as pgDrizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { mkdir } from 'node:fs/promises';
+import {postgresPoolConfig} from '../lib/db/postgres-config';
 
 async function main() {
   if (process.env.DATABASE_URL) {
-    const pool = new Pool({connectionString:process.env.DATABASE_URL});
-    await pgMigrate(pgDrizzle(pool),{migrationsFolder:'db/migrations'});
-    await pool.end();
+    const pool = new Pool(postgresPoolConfig(process.env,true));
+    try{await pgMigrate(pgDrizzle(pool),{migrationsFolder:'db/migrations'});}finally{await pool.end();}
   } else {
+    if(process.env.VERCEL==='1'||['demo','production'].includes(process.env.DEPLOYMENT_MODE??''))throw new Error('HOSTED_DATABASE_REQUIRED');
     await mkdir('.data',{recursive:true});
     const client = new PGlite(process.env.PGLITE_DATA_DIR||'.data/swasthyaflow');
     await pgliteMigrate(pgliteDrizzle(client),{migrationsFolder:'db/migrations'});
@@ -19,4 +20,4 @@ async function main() {
   }
   console.log('Migrations complete');
 }
-main().catch((error:unknown)=>{console.error(error); process.exitCode=1;});
+main().catch(()=>{console.error('Database migration failed. Check connection, verified TLS certificate, database permissions and migration history.'); process.exitCode=1;});

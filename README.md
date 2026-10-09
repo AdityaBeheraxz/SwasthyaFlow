@@ -1,3 +1,7 @@
+## Hosted hackathon deployment
+
+See [GitHub + Vercel + Supabase setup](docs/DEPLOYMENT.md). This profile accepts test-only data.
+
 # SwasthyaFlow
 
 SwasthyaFlow is a staff-facing intake and review system for source-linked frontline health information. It combines authenticated intake, report OCR, structured extraction, deterministic safety rules, human review, and an append-only audit trail.
@@ -23,6 +27,8 @@ pnpm dev
 Open http://localhost:3000. Local OCR uses Tesseract.js and downloads the configured language model on first use. `OCR_LANGUAGES=eng` is the baseline; validate additional language packs before using them. PDF OCR requires Poppler's `pdftoppm` on PATH or PDF_RENDERER_PATH. It processes at most ten pages.
 
 See [Provider interfaces](docs/PROVIDERS.md) for the independent ASR, IndicTrans2 translation, OCR and extraction modes, endpoint contracts, Hindi/Odia fixtures and offline storage limits. The environment template contains names with empty values.
+
+The local preview can use [local automatic transcription](docs/LOCAL_SPEECH.md) without an API key. Patient names are optional, protected facility data. Prescription and report files have separate upload categories; multiple files can be retained and each must be verified independently.
 
 ### Local bootstrap accounts
 

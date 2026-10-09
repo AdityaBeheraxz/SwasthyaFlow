@@ -3,15 +3,17 @@ import {eq} from 'drizzle-orm';
 import {createHash} from 'node:crypto';
 import {db} from '@/lib/db/server';
 import {reports,auditLogs,encounters} from '@/db/schema';
-import {session,allowed} from '@/lib/auth';
+import {allowed} from '@/lib/auth';
+import {clinicalReviewerSession as session} from '@/lib/reviewer-auth';
 import {failure,success,parseFailure} from '@/lib/api';
 import {consumeRateLimit} from '@/lib/rate-limit';
 import {ocrAdapter,OcrError} from '@/lib/ocr';
 import {measured} from '@/lib/metrics';
-import {extractReportData} from '@/lib/ocr/report-data';
+import {extractDocumentData} from '@/lib/ocr/document-data';
 import {encounterForActor} from '@/lib/access';
 import {objectStorage,reportStorageKey} from '@/lib/storage';
 import {reportMimeTypes,type ReportMimeType} from '@/lib/file-validation';
+export const maxDuration=300;
 
 const schema=z.union([
  z.object({clientRequestId:z.string().uuid().optional(),encounterId:z.string().min(1),rawText:z.string().trim().min(3).max(50_000)}).strict(),
@@ -39,7 +41,7 @@ export async function POST(req:Request){
    if(!encounter)return failure('NOT_FOUND','Encounter not found.',404);
    if(body.clientRequestId){const [saved]=await conn.select().from(reports).where(eq(reports.id,body.clientRequestId)).limit(1);if(saved){if(saved.encounterId!==encounter.id||saved.reviewedText!==body.rawText)return failure('SYNC_CONFLICT','The saved report differs from the queued report.',409);return success({reportId:saved.id});}}
    if(['COMPLETED','APPROVED','ESCALATED','REFERRAL_GENERATED','PROCESSING'].includes(encounter.state))return failure('ENCOUNTER_LOCKED','This encounter cannot accept source changes.',409);
-   const extracted=extractReportData(body.rawText,{verified:true});
+   const extracted=extractDocumentData(body.rawText,{verified:true});
    const reportId=body.clientRequestId??crypto.randomUUID();
    await conn.transaction(async tx=>{
     if(['TRIAGED','IN_REVIEW','INFO_REQUESTED'].includes(encounter.state))await tx.update(encounters).set({state:'INPUT_CAPTURED',status:'Report added; re-evaluation required'}).where(eq(encounters.id,encounter.id));
@@ -57,7 +59,7 @@ export async function POST(req:Request){
   if('reviewedText' in body){
    if(!report.rawOcr&&!report.reviewedText)return failure('OCR_REQUIRED','Run OCR before confirming extracted text.',409);
    const rawOcr=report.rawOcr??report.reviewedText!;
-   const extracted=extractReportData(body.reviewedText,{verified:true});
+   const extracted=extractDocumentData(body.reviewedText,{verified:true},report.documentType);
    await conn.transaction(async tx=>{
     await tx.update(reports).set({reviewedText:body.reviewedText,reviewedBy:actor!.id,reviewedAt:new Date(),extractedData:{...extracted.data,pages:report.extractedData?.pages},qualityStatus:'HUMAN_VERIFIED',qualityWarnings:[...(report.qualityWarnings??[]),...extracted.warnings]}).where(eq(reports.id,report.id));
     await tx.insert(auditLogs).values({id:crypto.randomUUID(),userId:actor!.id,encounterId:report.encounterId,action:'OCR_REVIEW_CONFIRMED',metadata:{report_id:report.id,raw_ocr_sha256:createHash('sha256').update(rawOcr).digest('hex'),reviewed_text_sha256:createHash('sha256').update(body.reviewedText).digest('hex'),changed:rawOcr!==body.reviewedText,warnings:extracted.warnings}});
@@ -83,7 +85,7 @@ export async function POST(req:Request){
   });
   try{
    const result=await measured(actor!.facilityId!,'ocr',()=>ocrAdapter().extract(stored.bytes,mimeType));
-   const extracted=extractReportData(result.rawText,{verified:false,tokens:result.tokens,meanConfidence:result.meanConfidence});
+   const extracted=extractDocumentData(result.rawText,{verified:false,tokens:result.tokens,meanConfidence:result.meanConfidence},report.documentType);
    const warnings=[...(report.qualityWarnings??[]),...result.warnings,...extracted.warnings];
    await conn.transaction(async tx=>{
     await tx.update(reports).set({rawOcr:result.rawText,reviewedText:null,reviewedBy:null,reviewedAt:null,ocrTokens:result.tokens,qualityStatus:result.quality,extractedData:{...extracted.data,pages:result.pages},qualityWarnings:[...new Set(warnings)],ocrEngine:result.engine,ocrConfidencePermille:Math.round(result.meanConfidence*1000),ocrCompletedAt:new Date(),ocrError:null}).where(eq(reports.id,report.id));

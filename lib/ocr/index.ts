@@ -1,6 +1,8 @@
+import {privateProviderFetch} from '@/lib/privacy-policy';
 import {z} from 'zod';
 import {providerMode} from '../provider-mode';
-import {join} from 'node:path';
+import {join,resolve} from 'node:path';
+import {access} from 'node:fs/promises';
 import {createWorker,OEM} from 'tesseract.js';
 import {type ReportMimeType} from '@/lib/file-validation';
 import {reportPage} from './pages';
@@ -51,7 +53,7 @@ export const enterpriseOcr:OcrAdapter={async extract(document,mimeType){
  form.set('languages',process.env.OCR_LANGUAGES||'eng+hin+ori');
  form.set('include_tokens','true');
  let response:Response;
- try{response=await fetch(url,{method:'POST',headers:{authorization:`Bearer ${key}`},body:form,signal:AbortSignal.timeout(45_000),cache:'no-store'});}catch{throw new OcrError('OCR_PROVIDER_FAILED','The OCR provider could not be reached. Retry or continue with manual transcription.');}
+ try{response=await privateProviderFetch(url,{method:'POST',headers:{authorization:`Bearer ${key}`},body:form,signal:AbortSignal.timeout(45_000),cache:'no-store'});}catch{throw new OcrError('OCR_PROVIDER_FAILED','The OCR provider could not be reached. Retry or continue with manual transcription.');}
  if(!response.ok)throw new OcrError('OCR_PROVIDER_FAILED','The OCR provider rejected the document. Retry or continue with manual transcription.');
  const parsed=enterpriseResponse.safeParse(await response.json());
  if(!parsed.success)throw new OcrError('OCR_PROVIDER_FAILED','The OCR provider returned an invalid response.');
@@ -67,11 +69,17 @@ export const tesseractOcr:OcrAdapter={async extract(document,mimeType){
  const pageCount=mimeType==='application/pdf'?(await PDFDocument.load(document)).getPageCount():1;
  if(pageCount>10)throw new OcrError('OCR_FORMAT_UNSUPPORTED','No more than ten report pages can be processed.');
  const languages=(process.env.OCR_LANGUAGES||'eng').split('+').filter(Boolean);
+ const modelDirectory=resolve(process.env.OCR_MODEL_PATH||join(process.cwd(),...(process.env.VERCEL==='1'||process.env.DEPLOYMENT_MODE==='demo'?['assets','ocr']:['.data','ocr-cache'])));
+ if(!languages.length||languages.some(language=>!/^[a-z_]{3,20}$/.test(language)))throw new OcrError('OCR_NOT_CONFIGURED','Configure valid Tesseract language codes.');
+ try{await Promise.all(languages.map(language=>access(join(modelDirectory,language+'.traineddata'))));}catch{throw new OcrError('OCR_NOT_CONFIGURED','A local Tesseract language model is missing. Ask your administrator to install the configured traineddata files. No document was sent to an external OCR service.');}
  let worker:Awaited<ReturnType<typeof createWorker>>|undefined;
  try{
   worker=await createWorker(languages,OEM.LSTM_ONLY,{
    logger:()=>undefined,
-   cachePath:join(process.cwd(),'.data','ocr-cache'),
+   cachePath:modelDirectory,
+   langPath:modelDirectory,
+   gzip:false,
+   cacheMethod:'readOnly',
    // Next.js otherwise rewrites Tesseract's relative worker path into `.next`,
    // where the Node worker script does not exist.
    workerPath:join(process.cwd(),'node_modules','tesseract.js','src','worker-script','node','index.js'),
@@ -88,7 +96,7 @@ export const tesseractOcr:OcrAdapter={async extract(document,mimeType){
   return {...summarize(texts.join('\n\n'),tokens,'tesseract.js'),pages};
  }catch(error){
   if(error instanceof OcrError)throw error;
-  throw new OcrError('OCR_PROVIDER_FAILED','OCR could not read this image. Check connectivity for the language model, retake the image, or enter report text manually.');
+  throw new OcrError('OCR_PROVIDER_FAILED','Local Tesseract could not read this document. Upload a clear, upright scan or enter text verified against the original. Handwritten text may be unreadable.');
  }finally{await worker?.terminate().catch(()=>undefined);}
 }};
 

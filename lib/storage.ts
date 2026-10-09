@@ -3,6 +3,7 @@ import {mkdir,readFile,rm,writeFile} from 'node:fs/promises';
 import {dirname,join} from 'node:path';
 import {DeleteObjectCommand,GetObjectCommand,PutObjectCommand,S3Client} from '@aws-sdk/client-s3';
 import {isProductionDeployment} from '@/lib/runtime-config';
+import {supabaseStorage} from './supabase-storage';
 
 export type StoredObject={bytes:Uint8Array;contentType:string};
 export interface ObjectStorage{put(key:string,bytes:Uint8Array,contentType:string):Promise<void>;get(key:string):Promise<StoredObject>;delete(key:string):Promise<void>}
@@ -22,5 +23,14 @@ const remote:ObjectStorage={
  async delete(key){await s3Client().send(new DeleteObjectCommand({Bucket:process.env.S3_BUCKET!,Key:safe(key)}));},
 };
 
-export function objectStorage():ObjectStorage{return isProductionDeployment?remote:local;}
+let supabase:ObjectStorage|undefined;
+export function objectStorage():ObjectStorage{
+ if(process.env.STORAGE_MODE==='supabase'){
+  if(isProductionDeployment)throw new Error('CLINICAL_STORAGE_APPROVAL_REQUIRED');
+  return supabase??=supabaseStorage();
+ }
+ if(isProductionDeployment||process.env.STORAGE_MODE==='s3')return remote;
+ if(process.env.VERCEL==='1'||process.env.DEPLOYMENT_MODE==='demo')throw new Error('HOSTED_STORAGE_REQUIRED');
+ return local;
+}
 export function reportStorageKey(fileName:string){return fileName.startsWith('reports/')?fileName:`reports/${fileName}`;}

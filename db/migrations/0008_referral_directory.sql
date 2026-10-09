@@ -1,0 +1,3 @@
+CREATE TABLE referral_recipients (id text PRIMARY KEY, facility_id text NOT NULL REFERENCES facilities(id), name text NOT NULL, kind text NOT NULL CHECK(kind IN ('government_hospital','specialist')), institution text NOT NULL, department text NOT NULL, registration_number text NOT NULL DEFAULT '', verification_reference text NOT NULL, verified_by text NOT NULL REFERENCES users(id), active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now());
+--> statement-breakpoint
+ALTER TABLE referrals ADD COLUMN recipient_id text REFERENCES referral_recipients(id), ADD COLUMN approved_by text REFERENCES users(id), ADD COLUMN consent_at timestamptz, ADD COLUMN delivery_status text NOT NULL DEFAULT 'NOT_SENT';

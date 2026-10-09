@@ -2,6 +2,7 @@
 
 import React, {useEffect, useMemo, useState} from 'react';
 import {motion} from 'motion/react';
+import {useUiLanguage} from '@/components/language-provider';
 
 const FLAP_CHARS=' ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$()-+&=;:\'"%,./?°';
 const ROWS=6;
@@ -30,6 +31,9 @@ function FlapCell({target,delay}:{target:string;delay:number}){
 }
 
 export function TextFlippingBoard({rows,className=''}:{rows:string[];className?:string}){
+ const {language,t}=useUiLanguage();
  const board=useMemo(()=>Array.from({length:ROWS},(_,row)=>Array.from({length:COLS},(_,col)=>(rows[row]??'').padEnd(COLS).slice(0,COLS)[col]??' ')),[rows]);
+ // Keep Indic words intact; individual flaps cannot render conjuncts correctly.
+ if(language!=='en')return <div className={`flap-board ${className}`} role="img" aria-label={rows.map(t).join('. ')}><div className="localized-safety-lines">{rows.map(row=><span key={row}>{t(row)}</span>)}</div></div>;
  return <div className={`flap-board ${className}`} role="img" aria-label={rows.join('. ')}><span className="sr-only">{rows.join('. ')}</span><div className="flap-grid">{board.flatMap((row,r)=>row.map((character,c)=><FlapCell key={`${r}-${c}`} target={character} delay={c*18+r*24}/>))}</div></div>;
 }

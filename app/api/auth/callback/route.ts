@@ -20,6 +20,6 @@ export async function GET(request:NextRequest){
   const conn=await db();const [facility]=await conn.select({id:facilities.id}).from(facilities).where(eq(facilities.id,facilityId)).limit(1);if(!facility)return failure('AUTH_FACILITY_DENIED','The assigned facility is not configured.',403);
   const id=`oidc:${claims.sub}`;const name=typeof claims.name==='string'?claims.name:'Authorized user';
   await conn.transaction(async tx=>{await tx.insert(users).values({id,name,role,facilityId}).onConflictDoUpdate({target:users.id,set:{name,role,facilityId}});await tx.insert(auditLogs).values({id:crypto.randomUUID(),userId:id,action:'USER_SIGNED_IN',metadata:{provider:'oidc'}});});
-  const response=NextResponse.redirect(appUrl());response.cookies.set('sf_session',await signSession(id,role,facilityId),{httpOnly:true,secure:true,sameSite:'strict',path:'/',maxAge:28800});response.cookies.delete('sf_oidc_flow');return response;
+  const response=NextResponse.redirect(appUrl());response.cookies.set('sf_session',await signSession(id,role,facilityId),{httpOnly:true,secure:true,sameSite:'strict',path:'/',maxAge:1800});response.cookies.delete('sf_oidc_flow');return response;
  }catch{return failure('AUTH_FAILED','Secure sign-in failed. Start again.',401);}
 }

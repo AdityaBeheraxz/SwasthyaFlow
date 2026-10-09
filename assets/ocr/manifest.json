@@ -1,0 +1,17 @@
+[
+  {
+    "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/eng.traineddata",
+    "sha256": "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2",
+    "file": "eng.traineddata"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/hin.traineddata",
+    "sha256": "4c73ffc59d497c186b19d1e90f5d721d678ea6b2e277b719bee4e2af12271825",
+    "file": "hin.traineddata"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/ori.traineddata",
+    "sha256": "36f3135e61d501a3acfad41f5fe60b8e791274fff4c5375c969fdcca980cdbac",
+    "file": "ori.traineddata"
+  }
+]

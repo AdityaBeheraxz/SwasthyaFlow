@@ -1,13 +1,34 @@
 import {z} from 'zod';
+import {externalProcessingIssues} from './privacy-policy';
 
-export const deploymentMode=process.env.DEPLOYMENT_MODE==='production'?'production':'development';
+export const deploymentMode=process.env.DEPLOYMENT_MODE==='production'?'production':process.env.DEPLOYMENT_MODE==='demo'?'demo':'development';
 export const isProductionDeployment=deploymentMode==='production';
+export const isDemoDeployment=deploymentMode==='demo';
 
 const httpsUrl=z.string().url().refine(value=>value.startsWith('https://'),'must use HTTPS');
+export function hostedDemoConfigIssues(env:NodeJS.ProcessEnv=process.env):string[]{
+ if(env.DEPLOYMENT_MODE!=='demo')return env.VERCEL==='1'&&env.DEPLOYMENT_MODE!=='production'?['DEPLOYMENT_MODE']:[];
+ const issues:string[]=[];
+ if(env.DEMO_TEST_DATA_ONLY!=='true')issues.push('DEMO_TEST_DATA_ONLY');
+ if(!env.AUTH_SECRET||env.AUTH_SECRET.length<32)issues.push('AUTH_SECRET');
+ if(!env.DATABASE_URL)issues.push('DATABASE_URL');
+ if(env.DATABASE_SSL_MODE!=='verify-full')issues.push('DATABASE_SSL_MODE');
+ if(!env.APP_URL||!httpsUrl.safeParse(env.APP_URL).success)issues.push('APP_URL');
+ if(env.STORAGE_MODE!=='supabase')issues.push('STORAGE_MODE');
+ if(!env.SUPABASE_URL||!httpsUrl.safeParse(env.SUPABASE_URL).success)issues.push('SUPABASE_URL');
+ for(const key of ['SUPABASE_SERVICE_ROLE_KEY','SUPABASE_STORAGE_BUCKET'])if(!env[key])issues.push(key);
+ if(env.ASR_MODE==='local')issues.push('ASR_MODE');
+ return issues;
+}
 
 export function productionConfigIssues(env:NodeJS.ProcessEnv=process.env):string[]{
  if((env.DEPLOYMENT_MODE??'development')!=='production')return [];
  const issues:string[]=[];
+ issues.push(...externalProcessingIssues(env));
+ if(env.DATABASE_ENCRYPTION_APPROVED!=='true')issues.push('DATABASE_ENCRYPTION_APPROVED');
+ for(const key of ['DATABASE_DATA_REGION','STORAGE_DATA_REGION'])if(env[key]!=='IN')issues.push(key);
+ if(!['ap-south-1','ap-south-2'].includes(env.S3_REGION??''))issues.push('S3_REGION');
+ for(const key of ['PRIVACY_LEGAL_ENTITY','PRIVACY_CONTACT','INDIA_CLINICAL_VALIDATION_APPROVED'])if(!env[key]||(key==='INDIA_CLINICAL_VALIDATION_APPROVED'&&env[key]!=='true'))issues.push(key);
  if(!env.DATABASE_URL)issues.push('DATABASE_URL');
  if(env.DATABASE_SSL_MODE!=='verify-full')issues.push('DATABASE_SSL_MODE');
  if(!env.AUTH_SECRET||env.AUTH_SECRET.length<32)issues.push('AUTH_SECRET');

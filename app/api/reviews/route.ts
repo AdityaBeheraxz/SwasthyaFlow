@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { and,desc,eq } from 'drizzle-orm';
 import { db } from '@/lib/db/server';
 import { encounters, triageNotes, reviews, auditLogs,inputs,reports,rulesConfig } from '@/db/schema';
-import { session, allowed } from '@/lib/auth';
+import {allowed} from '@/lib/auth';
+import {clinicalReviewerSession as session} from '@/lib/reviewer-auth';
 import { failure, success, parseFailure } from '@/lib/api';
 import { assertNonDiagnostic } from '@/lib/safety/resolve';
 import {encounterForActor} from '@/lib/access';
@@ -30,11 +31,16 @@ export async function POST(req:Request){
   const body=schema.parse(await req.json());
   if(body.decision==='APPROVE'&&actor?.role!=='medical_officer')return failure('FORBIDDEN','Medical Officer role required to approve.',403);
   if(body.summary)assertNonDiagnostic(body.summary);
+  if(body.notes)assertNonDiagnostic(body.notes);
   if(body.fields)assertNonDiagnostic(JSON.stringify(body.fields));
   const conn=await db();
   const encounter=await encounterForActor(body.encounterId,actor!);
   if(!encounter)return failure('NOT_FOUND','Encounter not found.',404);
   const [note]=await conn.select().from(triageNotes).where(eq(triageNotes.encounterId,body.encounterId)).limit(1);
+  if(body.decision==='APPROVE'){
+   const sourceDocuments=await conn.select({fileUrl:reports.fileUrl,reviewedText:reports.reviewedText}).from(reports).where(eq(reports.encounterId,encounter.id));
+   if(sourceDocuments.some(report=>report.fileUrl&&!report.reviewedText))return failure('OCR_REVIEW_REQUIRED','Verify every original document and re-evaluate its sources before approval.',409);
+  }
   let updatedNote:ReturnType<typeof assemble>|undefined;
   if(body.fields&&note){
    const [source]=await conn.select().from(inputs).where(eq(inputs.encounterId,encounter.id)).orderBy(desc(inputs.createdAt)).limit(1);
@@ -46,14 +52,14 @@ export async function POST(req:Request){
    const parsed=structuredFactsSchema.safeParse(note.fieldSources.facts);
    const base:StructuredFacts=parsed.success?parsed.data:{patient_reported:{symptoms:[],duration:[],history:[],medications:[]},timeline:[],report_data:[],missing_information:[],ambiguous_information:[],follow_up_questions:[],risk_signals:[],review_priority:'PENDING_RULE_ENGINE'};
    const facts={...base,patient_reported:{...base.patient_reported,duration:body.fields.duration??base.patient_reported.duration,symptoms:body.fields.symptoms,history:body.fields.history,medications:body.fields.medications},ambiguous_information:body.fields.ambiguousInformation??base.ambiguous_information,timeline:body.fields.timeline,missing_information:body.fields.missingInformation,follow_up_questions:body.fields.followUpQuestions};
-   const hbValues=storedReports.filter(report=>report.reviewedText&&typeof report.extractedData?.hb==='number').map(report=>report.extractedData!.hb as number);
+   const hbValues=storedReports.filter(report=>report.documentType!=='prescription'&&report.reviewedText&&typeof report.extractedData?.hb==='number').map(report=>report.extractedData!.hb as number);
    updatedNote=assemble(facts,{text:source?.originalText??encounter.chiefComplaint,language:source?.language??'en',reportValues:hbValues.length?{hb:Math.min(...hbValues)}:undefined},encounter.priorityFinal as PriorityResult,activeRules);
    updatedNote.summary=body.summary??note.summary;
    updatedNote.fieldSources={...updatedNote.fieldSources,provenance:{original:note.fieldSources.provenance,correction:{reviewerId:actor!.id,at:new Date().toISOString(),fields:body.fields}},evidence:body.fields.evidence,summary:`reviewer:${actor!.id}`};
   }
   if(!note&&body.decision!=='REQUEST_INFO')return failure('TRIAGE_FAILED','No usable triage note. Request information or retry.',422);
   const next=body.decision==='EDIT'?'IN_REVIEW':body.decision==='REQUEST_INFO'?'INFO_REQUESTED':body.decision==='APPROVE'?'APPROVED':'ESCALATED';
-  const initialReview=['TRIAGED','ASR_FAILED','OCR_FAILED','AI_FAILED','AI_PARSE_FAILED','TRIAGE_FAILED','SAFETY_ENGINE_FAILED','SAVE_FAILED'].includes(encounter.state);
+  const initialReview=['ESCALATED','TRIAGED','ASR_FAILED','OCR_FAILED','AI_FAILED','AI_PARSE_FAILED','TRIAGE_FAILED','SAFETY_ENGINE_FAILED','SAVE_FAILED'].includes(encounter.state);
   const current=initialReview?'IN_REVIEW':encounter.state;
   try{
    if(initialReview)transition(encounter.state as EncounterState,'IN_REVIEW',true,false);
@@ -64,13 +70,17 @@ export async function POST(req:Request){
    if(body.summary&&note)await tx.update(triageNotes).set({summary:body.summary,fieldSources:{...note.fieldSources,summary:`reviewer:${actor!.id}`}}).where(eq(triageNotes.id,note.id));
    if(updatedNote&&note)await tx.update(triageNotes).set(updatedNote).where(eq(triageNotes.id,note.id));
    await tx.insert(reviews).values({id:crypto.randomUUID(),encounterId:body.encounterId,reviewerId:actor!.id,changes:{...(body.summary&&note?{summary:{before:note.summary,after:body.summary}}:{}),...(body.fields&&note?{fields:{before:{facts:note.fieldSources.facts,evidence:note.fieldSources.evidence,timeline:encounter.timeline,missingInformation:note.missingInformation,followUpQuestions:note.followUpQuestions},after:body.fields}}:{})},decision:body.decision,notes:body.notes??null});
-   await tx.update(encounters).set({state:next,status:next,...(updatedNote&&body.fields?{timeline:body.fields.timeline,symptoms:body.fields.symptoms,priority:updatedNote.priority,priorityFinal:updatedNote.priority}: {})}).where(eq(encounters.id,body.encounterId));
+   const changed=await tx.update(encounters).set({state:next,status:next,...(updatedNote&&body.fields?{timeline:body.fields.timeline,symptoms:body.fields.symptoms,priority:updatedNote.priority,priorityFinal:updatedNote.priority}: {})}).where(and(eq(encounters.id,body.encounterId),eq(encounters.state,encounter.state))).returning({id:encounters.id});
+   if(!changed.length)throw new Error('CASE_CHANGED');
    if(updatedNote&&updatedNote.priority!==encounter.priorityFinal)await tx.insert(auditLogs).values({id:crypto.randomUUID(),userId:actor!.id,encounterId:encounter.id,action:'PRIORITY_REEVALUATED',metadata:{previous:encounter.priorityFinal,current:updatedNote.priority,reason:'Reviewer corrected source facts'}});
    await tx.insert(auditLogs).values({id:crypto.randomUUID(),userId:actor!.id,encounterId:body.encounterId,action:body.decision==='EDIT'?'TRIAGE_EDITED':`REVIEW_${body.decision}`,metadata:{summary_changed:Boolean(body.summary)}});
   });
   return success({state:next});
  }catch(e){
+  if(e instanceof Error&&e.message==='CASE_CHANGED')return failure('CASE_CHANGED','Another action changed this case. Refresh and review its current state before retrying.',409);
   if(e instanceof Error&&e.message==='AI_PARSE_FAILED')return failure('NON_DIAGNOSTIC_GUARD','Review text contains disallowed diagnosis or treatment language.',422);
   return parseFailure(e);
  }
 }
+
+

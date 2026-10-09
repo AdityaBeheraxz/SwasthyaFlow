@@ -14,12 +14,17 @@
     "seed:remove-legacy": "tsx db/remove-synthetic-seed.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx db/migrate.ts",
-    "retention:run": "tsx db/retention.ts"
+    "retention:run": "tsx db/retention.ts",
+    "referrals:dispatch": "tsx --conditions=react-server db/referral-worker.ts",
+    "prebuild": "node scripts/prepare-hosted-assets.mjs",
+    "seed:pitch": "tsx db/referral-pitch.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1136.0",
     "@electric-sql/pglite": "^0.3.14",
     "@hookform/resolvers": "^5.2.2",
+    "@napi-rs/canvas": "^1.0.10",
+    "@pdf-lib/fontkit": "^1.1.1",
     "@radix-ui/react-dialog": "^1.1.23",
     "@radix-ui/react-icons": "^1.3.2",
     "@radix-ui/react-label": "^2.1.15",
@@ -31,16 +36,20 @@
     "clsx": "^2.1.1",
     "dexie": "^4.2.0",
     "drizzle-orm": "^0.44.5",
+    "gsap": "^3.15.0",
     "jose": "^6.1.0",
     "lucide-react": "^0.468.0",
     "motion": "^12.23.0",
     "next": "^15.5.0",
     "openid-client": "^6.8.8",
     "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.4.299",
     "pg": "^8.16.3",
+    "playwright": "1.63.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-hook-form": "^7.62.0",
+    "regenerator-runtime": "^0.14.1",
     "server-only": "^0.0.1",
     "sharp": "^0.35.4",
     "tailwind-merge": "^3.7.0",
@@ -66,5 +75,8 @@
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   },
-  "packageManager": "pnpm@11.19.0"
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=22.13.0 <23"
+  }
 }

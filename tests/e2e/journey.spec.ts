@@ -56,11 +56,9 @@ test('consent to audit review journey',async({page})=>{
  await page.getByLabel('Summary').fill('Patient reports fever and severe pain for four days.');
  await page.getByRole('button',{name:'Save reviewer edit'}).click();
  await page.getByRole('button',{name:'Approve',exact:true}).click();
- await page.getByRole('button',{name:'Prepare referral draft'}).click();
- await page.getByRole('button',{name:'Save referral'}).click();
+ await expect(page.getByText('Public sharing and case printing are disabled.',{exact:false})).toBeVisible();
  await page.getByRole('button',{name:'Complete encounter'}).click();
  await page.getByRole('link',{name:'View encounter audit'}).click();
- await expect(page.getByText('REFERRAL_GENERATED').first()).toBeVisible();
  await expect(page.getByText('ENCOUNTER_COMPLETED').first()).toBeVisible();
 });
 
@@ -127,7 +125,7 @@ test('required rules stay protected and purge leaves tombstone',async({request})
  const id=encounter.data.id as string;
  await login(request,'administrator');
  expect((await request.post('/api/privacy/purge',{data:{encounterId:id}})).status()).toBe(200);
- expect((await request.get(`/api/encounters/${id}`)).status()).toBe(404);
+ expect((await request.get(`/api/encounters/${id}`)).status()).toBe(403);
  const audit=await (await request.get(`/api/audit/${id}`)).json();
  expect(audit.data.some((item:{action:string})=>item.action==='ENCOUNTER_PURGED')).toBe(true);
 });

@@ -31,7 +31,7 @@ export async function POST(req:Request){
    await tx.insert(auditLogs).values({id:crypto.randomUUID(),userId:user.id,facilityId:user.facilityId,action:'USER_SIGNED_IN',metadata:{provider:'local_credentials'}});
   });
   const response=success({id:user.id,name:user.name,role:user.role});
-  response.cookies.set('sf_session',await signSession(user.id,user.role as Role,user.facilityId),{httpOnly:true,sameSite:'strict',secure:process.env.NODE_ENV==='production',path:'/',maxAge:43200});
+  response.cookies.set('sf_session',await signSession(user.id,user.role as Role,user.facilityId),{httpOnly:true,sameSite:'strict',secure:process.env.NODE_ENV==='production',path:'/',maxAge:1800});
   return response;
  }catch(error){return parseFailure(error);}
 }

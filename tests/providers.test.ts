@@ -1,4 +1,4 @@
-import {describe,it,expect,vi,afterEach} from 'vitest';
+import {beforeEach,describe,it,expect,vi,afterEach} from 'vitest';
 import {readFile} from 'node:fs/promises';
 import {speechAdapter,liveSpeech} from '../lib/speech';
 import {translationAdapter,liveTranslation} from '../lib/translation';
@@ -40,6 +40,7 @@ describe('registered Hindi and Odia provider fixtures',()=>{
  it('rejects a misspelled mode',()=>{vi.stubEnv('TRANSLATION_MODE','fixtur');expect(translationAdapter).toThrow('INVALID');});
 });
 describe('live provider contracts with injected transport',()=>{
+ beforeEach(()=>{for(const key of ['EXTERNAL_PROCESSING_APPROVED','PROVIDER_NO_TRAINING_APPROVED','PROVIDER_NO_RETENTION_APPROVED'])vi.stubEnv(key,'true');vi.stubEnv('PROVIDER_DATA_REGION','IN');vi.stubEnv('ALLOWED_PROVIDER_ORIGINS','https://translation.example.test,https://extract.example.test,https://ocr.example.test');});
  it('sends the IndicTrans2 language pair and preserves uncertainty',async()=>{
   vi.stubEnv('TRANSLATION_API_URL','https://translation.example.test');vi.stubEnv('TRANSLATION_API_KEY','test-only');
   const fetchMock=vi.fn().mockResolvedValue(Response.json({normalized:'fever',ambiguousSpans:[{original:'x',normalized:'fever',reason:'uncertain'}]}));vi.stubGlobal('fetch',fetchMock);

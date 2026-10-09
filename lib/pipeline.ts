@@ -2,8 +2,9 @@ import {assertNonDiagnostic,resolvePriority,usableTriageNote,type PriorityResult
 import {evaluateRules,type Facts,type Rule} from './safety/rules';
 import {aiAdapter,type SourceBundle,type StructuredFacts} from './ai';
 import {inspectEvidence} from './facts';
+import {enforceFactsPolicy} from './ai/output-policy';
 
-export async function extract(source:SourceBundle){return aiAdapter().extract(source);}
+export async function extract(source:SourceBundle){return enforceFactsPolicy(await aiAdapter().extract(source),source);}
 export function assemble(facts:StructuredFacts,source:SourceBundle,previous?:PriorityResult,rules?:Rule[]){
  const durationText=facts.patient_reported.duration[0]??'';
  const value=Number(durationText.match(/\d+(?:\.\d+)?/)?.[0]);

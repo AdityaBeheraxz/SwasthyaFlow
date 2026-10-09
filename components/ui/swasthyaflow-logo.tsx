@@ -1,3 +1,4 @@
+
 const rays = [
   { x: 107.469, y: 199.301, width: 14.5784, height: 71.4846, rotation: 'rotate(179.9 107.469 199.301)' },
   { x: 106.959, y: 75.4922, width: 14, height: 75.9607, rotation: 'rotate(179.9 106.959 75.4922)' },

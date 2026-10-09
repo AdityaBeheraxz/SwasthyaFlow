@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import sharp from 'sharp';
 import {estimateTextTilt} from './image-quality';
 import {PDFDocument} from 'pdf-lib';
+import {uploadLimits} from './upload-limits';
 
 export const reportMimeTypes=['image/png','image/jpeg','application/pdf'] as const;
 export type ReportMimeType=typeof reportMimeTypes[number];
@@ -34,7 +35,8 @@ export async function inspectReportFile(bytes:Uint8Array,type:string):Promise<Re
  if(!reportMimeTypes.includes(type as ReportMimeType))throw new ReportFileValidationError('FILE_TYPE_UNSUPPORTED','Upload a PNG, JPEG, or PDF report.');
  const mimeType=type as ReportMimeType;
  if(bytes.byteLength<1024)throw new ReportFileValidationError('FILE_TOO_SMALL','The report file is empty or too small to contain a readable document.');
- if(bytes.byteLength>8_000_000)throw new ReportFileValidationError('FILE_TOO_LARGE','Report exceeds 8 MB.');
+ const maximum=uploadLimits().reportBytes;
+ if(bytes.byteLength>maximum)throw new ReportFileValidationError('FILE_TOO_LARGE',`Report exceeds ${maximum/1_000_000} MB.`);
  if(!matchesDeclaredType(bytes,type))throw new ReportFileValidationError('FILE_SIGNATURE_INVALID','File contents do not match the declared type.');
  const sha256=createHash('sha256').update(bytes).digest('hex');
  if(type==='application/pdf'){
