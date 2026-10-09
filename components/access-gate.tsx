@@ -2,7 +2,7 @@
 import {T} from '@/components/language-provider';
 
 import {useEffect,useState} from 'react';
-import {intakeActor} from '@/lib/offline';
+import {intakeActor} from '@/lib/session-client';
 import {usePathname} from 'next/navigation';
 
 const publicPaths=new Set(['/','/login','/privacy']);

@@ -1,14 +1,13 @@
 import {type SyncedIntake} from './sync-status';
 import Dexie,{type EntityTable} from 'dexie';
-export type OfflineActor={id:string;facilityId:string;role:string;name?:string;cachedAt:number};
+import {cachedOfflineActor,intakeActor,invalidateOfflineActor} from './session-client';
+export {cachedOfflineActor,intakeActor,type OfflineActor} from './session-client';
 type Media={name:string;type:string;base64:string;documentType?:'report'|'prescription'};
 type IntakeData={consentAuthority?:'self'|'guardian';patientName?:string;documents?:{id:string;media:Media;saved?:boolean}[];age:number;language:'hi'|'or'|'en';text:string;inputType:'text'|'voice';report:string;consent:true;reportMedia?:Media;audioMedia?:Media;patientId:string;encounterId:string;reportId:string;audioId:string;patientSaved?:boolean;encounterSaved?:boolean;reportSaved?:boolean;audioSaved?:boolean};
 export type PendingIntake={id:string;ownerId:string;facilityId:string;language:'hi'|'or'|'en';cipher:ArrayBuffer;iv:Uint8Array<ArrayBuffer>;createdAt:number;status:'PENDING_SYNC'|'SYNC_FAILED';error?:string};
 class OfflineStore extends Dexie{pending!:EntityTable<PendingIntake,'id'>;keys!:EntityTable<{ownerId:string;key:CryptoKey},'ownerId'>;constructor(){super('SwasthyaFlowOffline');this.version(1).stores({pending:'id,createdAt,status'});this.version(2).stores({pending:'id,ownerId,createdAt,status',keys:'ownerId'});}}
 export const offlineStore=new OfflineStore();
 export function offlineActive(){return typeof navigator!=='undefined'&&(!navigator.onLine||localStorage.getItem('sf_simulate_offline')==='1');}
-export function cachedOfflineActor():OfflineActor|null{try{const actor=JSON.parse(sessionStorage.getItem('sf_offline_actor')??'null');return actor&&Date.now()-actor.cachedAt<1800000?actor:null;}catch{return null;}}
-export async function intakeActor():Promise<OfflineActor|null>{if(!navigator.onLine)return cachedOfflineActor();const response=await fetch('/api/session',{cache:'no-store'});const value=await response.json(),actor=value.data;if(!actor?.facilityId){sessionStorage.removeItem('sf_offline_actor');return null;}const cached={id:actor.id,facilityId:actor.facilityId,role:actor.role,name:actor.name,cachedAt:Date.now()};sessionStorage.setItem('sf_offline_actor',JSON.stringify(cached));return cached;}
 async function createKey(ownerId:string){const found=await offlineStore.keys.get(ownerId);if(found)return found.key;const key=await crypto.subtle.generateKey({name:'AES-GCM',length:256},false,['encrypt','decrypt']);await offlineStore.keys.put({ownerId,key});return key;}
 async function keyFor(ownerId:string){return navigator.locks?navigator.locks.request("sf-offline-key:"+ownerId,()=>createKey(ownerId)):createKey(ownerId);}
 async function seal(ownerId:string,data:IntakeData){const iv=crypto.getRandomValues(new Uint8Array(12));const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:new TextEncoder().encode(ownerId)},await keyFor(ownerId),new TextEncoder().encode(JSON.stringify(data)));return {iv,cipher};}
@@ -38,4 +37,4 @@ await offlineStore.pending.delete(item.id);synced++;window.dispatchEvent(new Cus
 window.dispatchEvent(new Event('sf-offline-change'));return {synced,failed};};
 return navigator.locks?navigator.locks.request('swasthyaflow-sync',run):{synced:0,failed:1,error:'SYNC_LOCK_UNAVAILABLE'};}
 
-export async function clearPrivateDrafts(){await offlineStore.pending.clear();await offlineStore.keys.clear();sessionStorage.removeItem('sf_offline_actor');localStorage.removeItem('sf_simulate_offline');}
+export async function clearPrivateDrafts(){invalidateOfflineActor();await offlineStore.pending.clear();await offlineStore.keys.clear();localStorage.removeItem('sf_simulate_offline');}
